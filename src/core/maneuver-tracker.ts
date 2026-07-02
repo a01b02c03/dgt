@@ -3,6 +3,14 @@ import type { Maneuver } from './route-types';
 
 export type ManeuverStatus = 'pending' | 'active' | 'completed';
 
+/**
+ * Veredicto de la maniobra según criterios de examen específicos por tipo.
+ * 'not-evaluated' mientras el tipo no tenga criterios definidos (solo
+ * 'traffic-light' los tiene hoy, ver traffic-light-evaluator.ts) o mientras
+ * el evento evaluable de ese tipo no se haya producido todavía.
+ */
+export type ManeuverOutcome = 'pass' | 'fail' | 'not-evaluated';
+
 export interface ManeuverProgress {
   maneuver: Maneuver;
   status: ManeuverStatus;
@@ -10,6 +18,7 @@ export interface ManeuverProgress {
   closestDistanceM: number;
   /** Velocidad del vehículo (m/s) en el instante de menor distancia. */
   speedAtClosestMs: number;
+  outcome: ManeuverOutcome;
 }
 
 export interface VehicleSample {
@@ -26,6 +35,7 @@ export function createManeuverProgress(maneuvers: Maneuver[]): ManeuverProgress[
     status: 'pending',
     closestDistanceM: Infinity,
     speedAtClosestMs: 0,
+    outcome: 'not-evaluated',
   }));
 }
 
@@ -33,9 +43,10 @@ export function createManeuverProgress(maneuvers: Maneuver[]): ManeuverProgress[
  * Actualiza el progreso de cada maniobra según la posición actual del vehículo:
  * pending -> active al entrar en el radio de disparo del waypoint de la maniobra;
  * active -> completed al volver a alejarse tras haber estado activa. Solo
- * registra métricas (distancia y velocidad mínimas alcanzadas); no evalúa si la
- * maniobra se ejecutó correctamente — eso depende de criterios de examen
- * específicos por tipo de maniobra, todavía por definir.
+ * gestiona esa máquina de estados de proximidad y las métricas asociadas
+ * (distancia y velocidad mínimas alcanzadas); no toca `outcome` — el veredicto
+ * de tipos con criterios definidos (hoy solo 'traffic-light') lo calcula un
+ * evaluador aparte por tipo, ver traffic-light-evaluator.ts.
  */
 export function updateManeuverProgress(
   progress: ManeuverProgress[],

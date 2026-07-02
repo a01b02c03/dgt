@@ -3,6 +3,8 @@ import { findCollidingBuilding, vehicleCorners } from './core/collision';
 import { toLocalMeters } from './core/geo';
 import { createManeuverProgress, updateManeuverProgress } from './core/maneuver-tracker';
 import { queryRoadBounds, ROAD_WIDTH_M } from './core/road-bounds';
+import { getTrafficLightPhase } from './core/traffic-light';
+import { createStopLineCrossingState, updateTrafficLightOutcomes } from './core/traffic-light-evaluator';
 import { getBuildings, getFreeRoutes } from './routes';
 import { buildBuildingMeshes } from './scene/building-mesh';
 import { attachKeyboardInput } from './scene/keyboard-input';
@@ -14,6 +16,7 @@ import {
 } from './scene/maneuver-markers';
 import { buildRoadMesh } from './scene/road-mesh';
 import { buildSignMarkers } from './scene/sign-markers';
+import { buildTrafficLightMarkers, TRAFFIC_LIGHT_PHASE_COLORS } from './scene/traffic-light-markers';
 import { createVehicleState, stepVehicle } from './scene/vehicle-controller';
 import {
   buildVehicleMesh,
@@ -83,13 +86,17 @@ function createScene(): Scene {
   buildSignMarkers(freeRoute, origin, scene);
 
   const maneuverMarkers = buildManeuverMarkers(freeRoute, origin, scene);
+  const trafficLightMarkers = buildTrafficLightMarkers(freeRoute, origin, scene);
   let maneuverProgress = createManeuverProgress(freeRoute.maneuvers);
+  let crossingState = createStopLineCrossingState(freeRoute.maneuvers.length);
 
   const getInput = attachKeyboardInput();
   let wasOnRoad = true;
   let wasColliding = false;
+  let elapsedSimS = 0;
   scene.onBeforeRenderObservable.add(() => {
     const dtSeconds = engine.getDeltaTime() / 1000;
+    elapsedSimS += dtSeconds;
     const candidate = stepVehicle(vehicleState, getInput(), dtSeconds);
 
     // Colisión con edificios: a diferencia de los límites de calzada, un coche
@@ -138,6 +145,34 @@ function createScene(): Scene {
             ? MANEUVER_COMPLETED_COLOR
             : MANEUVER_PENDING_COLOR;
       console.log(`Maniobra "${entry.maneuver.description}": ${entry.status}`);
+    });
+
+    // Evaluación pass/fail de maniobras traffic-light: instante de cruce de la
+    // línea de stop, criterio = fase del semáforo en ese instante (ver
+    // traffic-light-evaluator.ts para el porqué de no reevaluar más de una vez).
+    const previousOutcomes = maneuverProgress.map((entry) => entry.outcome);
+    const trafficLightResult = updateTrafficLightOutcomes(
+      maneuverProgress,
+      crossingState,
+      freeRoute.waypoints,
+      routePoints,
+      { x: vehicleState.x, z: vehicleState.z },
+      elapsedSimS,
+    );
+    maneuverProgress = trafficLightResult.progress;
+    crossingState = trafficLightResult.crossingState;
+    maneuverProgress.forEach((entry, index) => {
+      if (entry.outcome === previousOutcomes[index]) {
+        return;
+      }
+      console.log(`Maniobra "${entry.maneuver.description}": outcome ${entry.outcome}`);
+    });
+
+    // Semáforos: recoloreado continuo (no solo en transición), según la fase actual.
+    trafficLightMarkers.forEach((marker) => {
+      const maneuver = freeRoute.maneuvers[marker.maneuverIndex];
+      const phase = getTrafficLightPhase(elapsedSimS, maneuver.atWaypointIndex);
+      marker.material.diffuseColor = TRAFFIC_LIGHT_PHASE_COLORS[phase];
     });
   });
 
