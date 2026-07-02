@@ -2,6 +2,9 @@ import { Color3, Engine, FollowCamera, HemisphericLight, MeshBuilder, Scene, Sta
 import { findCollidingBuilding, vehicleCorners } from './core/collision';
 import { toLocalMeters } from './core/geo';
 import { currentSpeedLimitKmh, maneuverChecklistLabel, speedMsToKmh } from './core/hud';
+import { licenseStatusView } from './core/license';
+import { activateLicense, fetchSessionStatus, requestCheckout, validateLicense } from './license/api';
+import { getOrCreateDeviceId, readStoredLicense, writeStoredLicense } from './license/storage';
 import { createManeuverProgress, updateManeuverProgress } from './core/maneuver-tracker';
 import { queryRoadBounds, ROAD_WIDTH_M } from './core/road-bounds';
 import { getTrafficLightPhase } from './core/traffic-light';
@@ -27,9 +30,81 @@ import {
   VEHICLE_WIDTH_M,
 } from './scene/vehicle-mesh';
 import { buildHud } from './ui/hud';
+import { buildLicensePanel } from './ui/license-panel';
 
 const canvas = document.getElementById('renderCanvas') as HTMLCanvasElement;
 const engine = new Engine(canvas, true);
+
+/**
+ * Panel de licencia Pro: no depende de Babylon/la escena, se inicializa aparte.
+ * Hoy no gatea ninguna ruta (no existe contenido Pro todavía, ver CLAUDE.md) —
+ * solo gestiona el ciclo compra → activación → estado mostrado.
+ */
+function initLicensePanel(): void {
+  const deviceId = getOrCreateDeviceId();
+  let licenseState = readStoredLicense();
+
+  const panel = buildLicensePanel({
+    async onCheckout(email) {
+      panel.setMessage(null);
+      try {
+        const { url } = await requestCheckout(email);
+        window.location.href = url;
+      } catch (err) {
+        panel.setMessage(err instanceof Error ? err.message : 'No se pudo iniciar el pago');
+      }
+    },
+    async onActivate(licenseKey) {
+      panel.setMessage(null);
+      try {
+        const { expiresAt } = await activateLicense(licenseKey, deviceId);
+        licenseState = { licenseKey, deviceId, expiresAt };
+        writeStoredLicense(licenseState);
+        panel.render(licenseStatusView(licenseState, Date.now()));
+        panel.setMessage('Licencia activada.');
+      } catch (err) {
+        panel.setMessage(err instanceof Error ? err.message : 'No se pudo activar la licencia');
+      }
+    },
+  });
+
+  panel.render(licenseStatusView(licenseState, Date.now()));
+
+  if (licenseState) {
+    const stored = licenseState;
+    // Confirmación contra el backend: la copia local puede estar desactualizada
+    // (activada mientras tanto en otro dispositivo, o revocada).
+    validateLicense(stored.licenseKey, deviceId)
+      .then((result) => {
+        licenseState =
+          result.valid && result.expiresAt
+            ? { licenseKey: stored.licenseKey, deviceId, expiresAt: result.expiresAt }
+            : null;
+        if (licenseState) {
+          writeStoredLicense(licenseState);
+        }
+        panel.render(licenseStatusView(licenseState, Date.now()));
+      })
+      .catch(() => {
+        // Sin conexión o backend caído: se mantiene el estado guardado localmente.
+      });
+  }
+
+  const sessionId = new URLSearchParams(window.location.search).get('session_id');
+  if (sessionId) {
+    fetchSessionStatus(sessionId)
+      .then((status) => {
+        panel.setMessage(
+          status.status === 'complete' && status.licenseKey
+            ? `Compra completada. Tu clave: ${status.licenseKey} — actívala abajo.`
+            : 'Compra recibida, procesando. Revisa tu email en unos segundos.',
+        );
+      })
+      .catch(() => {
+        panel.setMessage('No se pudo comprobar el estado del pago.');
+      });
+  }
+}
 
 function createScene(): Scene {
   const scene = new Scene(engine);
@@ -189,6 +264,8 @@ function createScene(): Scene {
 
   return scene;
 }
+
+initLicensePanel();
 
 const scene = createScene();
 

@@ -23,6 +23,16 @@ export function getFreeRoutes(): RouteDefinition[] {
   return routeRegistry.filter((route) => route.isFree);
 }
 
+/**
+ * Rutas visibles según el acceso Pro del usuario. Hoy no hay ninguna ruta con
+ * isFree=false registrada, así que se comporta igual que getFreeRoutes() en ambos
+ * casos — existe ya para que el gate de licencia (ver CLAUDE.md) solo tenga que
+ * llamar a esta función en vez de reimplementar el filtro cuando lleguen rutas Pro.
+ */
+export function getAccessibleRoutes(hasProAccess: boolean): RouteDefinition[] {
+  return routeRegistry.filter((route) => route.isFree || hasProAccess);
+}
+
 export function getBuildings(routeId: string): BuildingFootprint[] {
   return buildingsByRouteId[routeId] ?? [];
 }

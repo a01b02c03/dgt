@@ -1,0 +1,17 @@
+CREATE TABLE IF NOT EXISTS licenses (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  license_key VARCHAR(64) NOT NULL UNIQUE,
+  email VARCHAR(255) NOT NULL,
+  stripe_checkout_session_id VARCHAR(255) NOT NULL UNIQUE,
+  device_id VARCHAR(128) NULL,
+  activated_at DATETIME NULL,
+  expires_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS rate_limits (
+  bucket VARCHAR(191) NOT NULL,
+  window_start DATETIME NOT NULL,
+  count INT NOT NULL DEFAULT 1,
+  PRIMARY KEY (bucket, window_start)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

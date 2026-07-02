@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getFreeRoutes, getRoute, routeRegistry } from './index';
+import { getAccessibleRoutes, getFreeRoutes, getRoute, routeRegistry } from './index';
 
 describe('routeRegistry', () => {
   it('exposes only free routes in the free build scope', () => {
@@ -17,5 +17,15 @@ describe('routeRegistry', () => {
   it('does not register duplicate route ids', () => {
     const ids = routeRegistry.map((route) => route.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+describe('getAccessibleRoutes', () => {
+  it('matches getFreeRoutes for a user without Pro access', () => {
+    expect(getAccessibleRoutes(false)).toEqual(getFreeRoutes());
+  });
+
+  it('still matches getFreeRoutes for a user with Pro access, since no Pro route exists yet', () => {
+    expect(getAccessibleRoutes(true)).toEqual(getFreeRoutes());
   });
 });
