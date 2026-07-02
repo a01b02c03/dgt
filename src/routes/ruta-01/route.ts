@@ -23,9 +23,15 @@ import type { RouteDefinition } from '../../core/route-types';
  *   OSM ya marcaba oneway=yes — dos fuentes independientes de acuerdo.
  * headingDeg de estas señales es el rumbo de la ruta en el waypoint más cercano
  * (convención ya usada en este archivo), no el ángulo real del panel —ese dato
- * no está en el CSV. Hay más señales reales (R-100/R-101) cerca del cruce con
- * Gran Via que no se han incluido: sin dato de orientación por fila, no se puede
- * saber con seguridad a qué calle del cruce gobiernan cada una.
+ * no está en el CSV. Hay 7 señales reales más (R-100/R-101, activas, <21m del
+ * cruce de Gran Via) que deliberadamente no se incluyen: se resolvió a qué calle
+ * gobierna cada una cruzando su coordenada contra la geometría real de calles de
+ * OpenStreetMap (Overpass, distancia punto-segmento a cada `way["highway"]`
+ * vehicular cercano) y las 7 caen a 3-7.5m de un tramo de la propia Gran Via
+ * (calzada central o alguno de sus dos carrils laterals, todos oneway=yes) —
+ * ninguna gobierna Carrer de la Marina, que en este cruce es de doble sentido
+ * (`237521097`/`490655483`, oneway=no). No es una ambigüedad sin resolver: son
+ * señales de sentido único de la propia Gran Via, irrelevantes para esta ruta.
  *
  * Maniobras `traffic-light` (paso 4 del pipeline) verificadas contra el
  * inventario oficial de semáforos del Ajuntament de Barcelona
