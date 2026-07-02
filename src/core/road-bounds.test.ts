@@ -44,5 +44,22 @@ describe('queryRoadBounds', () => {
     ];
     const result = queryRoadBounds(bent, 6, { x: 25, z: 51 });
     expect(result.distanceFromCenterM).toBeCloseTo(1, 6);
+    expect(result.segmentIndex).toBe(1);
+  });
+
+  it('reports segmentIndex 0 on a single-segment route regardless of z', () => {
+    expect(queryRoadBounds(straight, 6, { x: 0, z: 10 }).segmentIndex).toBe(0);
+    expect(queryRoadBounds(straight, 6, { x: 0, z: 90 }).segmentIndex).toBe(0);
+  });
+
+  it('picks the correct middle segment among three, not just any non-zero index', () => {
+    const threeSegments = [
+      { x: 0, z: 0 },
+      { x: 0, z: 50 },
+      { x: 50, z: 50 },
+      { x: 50, z: 100 },
+    ];
+    const result = queryRoadBounds(threeSegments, 6, { x: 25, z: 50 });
+    expect(result.segmentIndex).toBe(1);
   });
 });

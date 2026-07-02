@@ -9,6 +9,8 @@ export interface RoadBoundsQuery {
   lateralOffsetM: number;
   /** true si está dentro del ancho de calzada (distanceFromCenterM <= roadWidthM / 2). */
   onRoad: boolean;
+  /** Índice i tal que el segmento más cercano es centerline[i]-centerline[i+1]. */
+  segmentIndex: number;
 }
 
 /**
@@ -24,6 +26,7 @@ export function queryRoadBounds(
 ): RoadBoundsQuery {
   let bestDistance = Infinity;
   let bestLateral = 0;
+  let bestSegmentIndex = 0;
 
   for (let i = 0; i < centerline.length - 1; i++) {
     const p1 = centerline[i];
@@ -45,6 +48,7 @@ export function queryRoadBounds(
 
     if (distance < bestDistance) {
       bestDistance = distance;
+      bestSegmentIndex = i;
       // cruz 2D (dx,dz) x (toPointX,toPointZ): >0 = izquierda del sentido de circulación, <0 = derecha.
       const cross = dx * toPointZ - dz * toPointX;
       const length = Math.sqrt(segmentLengthSq) || 1;
@@ -57,6 +61,7 @@ export function queryRoadBounds(
     distanceFromCenterM: bestDistance,
     lateralOffsetM: bestLateral,
     onRoad: bestDistance <= halfWidth,
+    segmentIndex: bestSegmentIndex,
   };
 }
 

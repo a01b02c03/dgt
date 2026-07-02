@@ -1,6 +1,7 @@
 import { Color3, Engine, FollowCamera, HemisphericLight, MeshBuilder, Scene, StandardMaterial, Vector3 } from '@babylonjs/core';
 import { findCollidingBuilding, vehicleCorners } from './core/collision';
 import { toLocalMeters } from './core/geo';
+import { currentSpeedLimitKmh, maneuverChecklistLabel, speedMsToKmh } from './core/hud';
 import { createManeuverProgress, updateManeuverProgress } from './core/maneuver-tracker';
 import { queryRoadBounds, ROAD_WIDTH_M } from './core/road-bounds';
 import { getTrafficLightPhase } from './core/traffic-light';
@@ -25,6 +26,7 @@ import {
   VEHICLE_ON_ROAD_COLOR,
   VEHICLE_WIDTH_M,
 } from './scene/vehicle-mesh';
+import { buildHud } from './ui/hud';
 
 const canvas = document.getElementById('renderCanvas') as HTMLCanvasElement;
 const engine = new Engine(canvas, true);
@@ -90,6 +92,9 @@ function createScene(): Scene {
   let maneuverProgress = createManeuverProgress(freeRoute.maneuvers);
   let crossingState = createStopLineCrossingState(freeRoute.maneuvers.length);
 
+  const hud = buildHud(freeRoute.maneuvers);
+  maneuverProgress.forEach((entry, index) => hud.setManeuverState(index, maneuverChecklistLabel(entry)));
+
   const getInput = attachKeyboardInput();
   let wasOnRoad = true;
   let wasColliding = false;
@@ -125,6 +130,8 @@ function createScene(): Scene {
       wasOnRoad = bounds.onRoad;
     }
 
+    hud.setSpeed(speedMsToKmh(vehicleState.speedMs), currentSpeedLimitKmh(freeRoute.waypoints, bounds.segmentIndex));
+
     // Seguimiento de progreso de maniobras: solo registra métricas (todavía no
     // evalúa si se ejecutaron correctamente, eso requiere criterios de examen).
     const previousStatuses = maneuverProgress.map((entry) => entry.status);
@@ -144,6 +151,7 @@ function createScene(): Scene {
           : entry.status === 'completed'
             ? MANEUVER_COMPLETED_COLOR
             : MANEUVER_PENDING_COLOR;
+      hud.setManeuverState(index, maneuverChecklistLabel(entry));
       console.log(`Maniobra "${entry.maneuver.description}": ${entry.status}`);
     });
 
@@ -165,6 +173,7 @@ function createScene(): Scene {
       if (entry.outcome === previousOutcomes[index]) {
         return;
       }
+      hud.setManeuverState(index, maneuverChecklistLabel(entry));
       console.log(`Maniobra "${entry.maneuver.description}": outcome ${entry.outcome}`);
     });
 
