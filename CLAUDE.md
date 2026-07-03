@@ -54,9 +54,17 @@ desbloquear.
 
 ### Rutas individuales (`src/routes/<id>/route.ts`)
 
-Cada ruta vive en su propia carpeta y exporta un único `RouteDefinition`. `ruta-01/route.ts` es
-hoy un esqueleto de 3 waypoints con coordenadas placeholder (comentario `TODO` en el archivo) —
-la geometría real todavía no se ha extraído de OpenStreetMap.
+Cada ruta vive en su propia carpeta y exporta un único `RouteDefinition`. `ruta-01/route.ts` tiene
+ya geometría real extraída de OpenStreetMap (Carrer de la Marina, el Fort Pienc/Eixample, Gran
+Via, 7 waypoints, ~419m), con señalización real (`src/routes/ruta-01/route.ts`) y 326 edificios
+extruidos desde sus huellas OSM (`src/routes/ruta-01/buildings.ts`). El método de verificación de
+cada dato (señales, semáforos, exclusión de cruces ambiguos) está documentado en el comentario de
+cabecera de `route.ts` — consultarlo antes de asumir que un dato es aproximado.
+
+De los 6 `ManeuverType` del modelo, solo `traffic-light` tiene criterios de evaluación pass/fail
+implementados (`src/core/traffic-light.ts` + `traffic-light-evaluator.ts`) y es el único que usa
+`ruta-01`. `parallel-park`, `roundabout`, `u-turn`, `lane-change` y `give-way` existen en el tipo
+pero no tienen lógica de evaluación ni maniobras instanciadas en ninguna ruta todavía.
 
 ### Pipeline de construcción de una ruta (decidido, no automatizado todavía)
 
@@ -96,10 +104,31 @@ despliegue en Freehostia (PHP 8.4 + MySQL 8) y el contrato de los 5 endpoints.
   alguien técnico podría eludirlo. Es un límite blando, igual que el `deviceId` en `localStorage`
   (no es DRM real). No sobre-diseñar esto más allá de lo que ya hay.
 
-## Estado y próximos pasos (no implementado todavía)
+## Estado y próximos pasos
 
-- Geometría real de `ruta-01` (hoy son coordenadas placeholder).
-- Carga de mallas de calle/edificios en `main.ts` (hoy solo hay un `ground` plano de relleno).
-- Físicas de vehículo e input de conducción.
+**Ya construido** (todo en `master`, ver `git log` para el detalle commit a commit): geometría real
+de `ruta-01` + mallas de calle/edificios (`src/scene/road-mesh.ts`, `building-mesh.ts`), vehículo
+con controlador **cinemático** (no motor de físicas — `src/scene/vehicle-controller.ts`) e input de
+teclado (`keyboard-input.ts`), colisión bloqueante con edificios (`core/collision.ts`), detección de
+salida de calzada no bloqueante (`core/road-bounds.ts`), señalización real, maniobras de semáforo
+con evaluación pass/fail, y un primer HUD (velocímetro + checklist de maniobras, `src/ui/hud.ts` +
+`core/hud.ts`). Gate de licencia Pro completo (ver arriba), sin nada Pro que gatear todavía.
+
+**No implementado todavía**:
+- Criterios de evaluación para los otros 5 `ManeuverType` (aparcamiento, rotonda, cambio de
+  sentido, cambio de carril, ceda el paso) — hoy solo `traffic-light` tiene lógica y es el único
+  usado en `ruta-01`.
+- Pantalla de resultado final del examen (apto/no apto agregado); hoy el HUD solo muestra estado
+  por maniobra individual, no hay resumen al terminar la ruta.
+- Físicas de vehículo "de verdad" (motor de físicas de Babylon) — el controlador actual es
+  cinemático, decisión deliberada hasta ahora, no una limitación técnica descubierta.
+- IA de tráfico/peatones (ver pipeline arriba, paso 5 — pensado como genérico y reutilizable,
+  todavía no empezado).
+- Verificación del checkout de Stripe contra la API real (hoy solo probado con un fake HTTP
+  inyectado en los tests del backend).
+- Defecto cosmético menor: triangulación del techo (roof cap) rota en edificios con huella
+  compleja/muchos puntos (p. ej. `osm-120022089`), por posible auto-intersección del polígono OSM.
+  No afecta a la cámara de conducción (no se ve el techo desde ahí); baja prioridad salvo que se
+  añada una vista aérea o mapa.
 - Rutas o circulación libre de la versión Pro — el gate de licencia ya existe (ver arriba), pero
   no hay ningún contenido Pro que gatear todavía.
