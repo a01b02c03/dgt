@@ -11,6 +11,14 @@ import { createParallelParkEvalState, updateParallelParkOutcomes } from './core/
 import { queryRoadBounds, ROAD_WIDTH_M } from './core/road-bounds';
 import { getTrafficLightPhase } from './core/traffic-light';
 import { createStopLineCrossingState, updateTrafficLightOutcomes } from './core/traffic-light-evaluator';
+import {
+  buildArcLengthTable,
+  createAiVehicleState,
+  estimateArcLength,
+  nextStopArcLengthM,
+  poseAtArcLength,
+  stepAiVehicle,
+} from './core/traffic-ai';
 import { createUTurnEvalState, updateUTurnOutcomes } from './core/u-turn-evaluator';
 import { getBuildings, getFreeRoutes } from './routes';
 import { buildBuildingMeshes } from './scene/building-mesh';
@@ -26,6 +34,7 @@ import { buildSignMarkers } from './scene/sign-markers';
 import { buildTrafficLightMarkers, TRAFFIC_LIGHT_PHASE_COLORS } from './scene/traffic-light-markers';
 import { createVehicleState, stepVehicle } from './scene/vehicle-controller';
 import {
+  AI_VEHICLE_COLOR,
   buildVehicleMesh,
   VEHICLE_LENGTH_M,
   VEHICLE_OFF_ROAD_COLOR,
@@ -166,6 +175,25 @@ function createScene(): Scene {
 
   buildSignMarkers(freeRoute, origin, scene);
 
+  // Tráfico ambiente: vehículos de IA que siguen el mismo trazado que el
+  // jugador (todavía no hay modelo de carriles/sentido contrario, ver
+  // CLAUDE.md), respetan los semáforos en rojo y guardan distancia con el
+  // vehículo inmediatamente delante (jugador u otro coche de IA) — ver
+  // core/traffic-ai.ts. Offsets iniciales arbitrarios, no ligados a ningún
+  // dato real; se descartan los que caen más allá del final de la ruta.
+  const arcLengthTable = buildArcLengthTable(routePoints);
+  const routeLengthM = arcLengthTable[arcLengthTable.length - 1];
+  const AI_VEHICLE_INITIAL_OFFSETS_M = [60, 140];
+  const aiVehicles = AI_VEHICLE_INITIAL_OFFSETS_M.filter((offsetM) => offsetM < routeLengthM).map((offsetM) => {
+    const { mesh, bodyMaterial } = buildVehicleMesh(scene);
+    bodyMaterial.diffuseColor = AI_VEHICLE_COLOR;
+    const pose = poseAtArcLength(routePoints, arcLengthTable, offsetM);
+    mesh.position.x = pose.x;
+    mesh.position.z = pose.z;
+    mesh.rotation.y = pose.headingRad;
+    return { mesh, state: createAiVehicleState(offsetM) };
+  });
+
   const maneuverMarkers = buildManeuverMarkers(freeRoute, origin, scene);
   const trafficLightMarkers = buildTrafficLightMarkers(freeRoute, origin, scene);
   let maneuverProgress = createManeuverProgress(freeRoute.maneuvers);
@@ -301,6 +329,36 @@ function createScene(): Scene {
       const maneuver = freeRoute.maneuvers[marker.maneuverIndex];
       const phase = getTrafficLightPhase(elapsedSimS, maneuver.atWaypointIndex);
       marker.material.diffuseColor = TRAFFIC_LIGHT_PHASE_COLORS[phase];
+    });
+
+    // Tráfico de IA: cada vehículo frena ante semáforos en rojo por delante o
+    // ante el vehículo inmediatamente delante suyo (jugador u otro coche de
+    // IA), ver core/traffic-ai.ts. Se usa un snapshot de las distancias antes
+    // de este frame para que el orden de iteración no afecte al resultado.
+    const redLightArcLengths = freeRoute.maneuvers
+      .filter((maneuver) => maneuver.type === 'traffic-light')
+      .filter((maneuver) => getTrafficLightPhase(elapsedSimS, maneuver.atWaypointIndex) === 'red')
+      .map((maneuver) => arcLengthTable[maneuver.atWaypointIndex]);
+    const playerArcM = estimateArcLength(routePoints, arcLengthTable, { x: vehicleState.x, z: vehicleState.z });
+    const aiArcsBeforeStep = aiVehicles.map((vehicle) => vehicle.state.distanceAlongRouteM);
+
+    aiVehicles.forEach((vehicle, index) => {
+      const otherArcs = [playerArcM, ...aiArcsBeforeStep.filter((_, otherIndex) => otherIndex !== index)];
+      const arcsAhead = otherArcs.filter((arc) => arc > vehicle.state.distanceAlongRouteM);
+      const leadArcM = arcsAhead.length > 0 ? Math.min(...arcsAhead) : null;
+
+      const aiBounds = queryRoadBounds(routePoints, ROAD_WIDTH_M, {
+        x: vehicle.mesh.position.x,
+        z: vehicle.mesh.position.z,
+      });
+      const speedLimitMs = currentSpeedLimitKmh(freeRoute.waypoints, aiBounds.segmentIndex) / 3.6;
+      const stopLineArcM = nextStopArcLengthM(vehicle.state.distanceAlongRouteM, redLightArcLengths, leadArcM);
+
+      vehicle.state = stepAiVehicle(vehicle.state, { speedLimitMs, stopLineArcM }, dtSeconds);
+      const pose = poseAtArcLength(routePoints, arcLengthTable, vehicle.state.distanceAlongRouteM);
+      vehicle.mesh.position.x = pose.x;
+      vehicle.mesh.position.z = pose.z;
+      vehicle.mesh.rotation.y = pose.headingRad;
     });
 
     // Veredicto agregado del examen (ver core/exam-result.ts): 'fail' en cuanto

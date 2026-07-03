@@ -7,6 +7,8 @@ const NOSE_LENGTH_M = 0.4;
 
 export const VEHICLE_ON_ROAD_COLOR = new Color3(0.15, 0.35, 0.75);
 export const VEHICLE_OFF_ROAD_COLOR = new Color3(0.75, 0.2, 0.15);
+/** Color de carrocería de los vehículos de IA (tráfico ambiente), para distinguirlos del jugador. */
+export const AI_VEHICLE_COLOR = new Color3(0.55, 0.55, 0.58);
 
 export interface VehicleMesh {
   mesh: Mesh;

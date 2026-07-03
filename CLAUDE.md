@@ -67,8 +67,25 @@ de evaluación pass/fail — ver la cabecera de cada archivo para el criterio ex
 `traffic-light` se usa hoy en `ruta-01`; `u-turn` y `parallel-park` están conectados en el bucle de
 `main.ts` pero sin ninguna maniobra instanciada en ninguna ruta todavía, así que no tienen efecto
 visible hasta que una ruta real los use. `roundabout`, `lane-change` y `give-way` siguen sin
-criterios: su evaluación real depende de IA de tráfico (ceder el paso, ceda el paso) o de un modelo
-de carriles (`lane-change`) que este proyecto no tiene todavía — ver "Estado y próximos pasos".
+criterios: su evaluación real depende de más IA de tráfico de la que hay hoy (ver abajo) o de un
+modelo de carriles (`lane-change`) que este proyecto no tiene todavía — ver "Estado y próximos
+pasos".
+
+### IA de tráfico (`src/core/traffic-ai.ts`)
+
+Primer corte, solo vehículos (peatones sin empezar). Los coches de IA no tienen volante: siguen el
+trazado de la ruta por distancia acumulada (`buildArcLengthTable` + `poseAtArcLength`), la misma
+que sigue el jugador pero proyectada (`estimateArcLength`, ya que el vehículo del jugador se mueve
+libre en 2D, no por arco). Cada coche de IA frena a una distancia fija (`BRAKING_DISTANCE_M`, sin
+modelo de frenada real) ante lo primero que tenga por delante: un semáforo en rojo sin cruzar
+(reutiliza `getTrafficLightPhase`) o el vehículo inmediatamente delante — que puede ser otro coche
+de IA o el propio jugador — guardando `FOLLOWING_GAP_M`. Sin modelo de carriles/sentido contrario
+todavía: todos los coches de IA circulan por el mismo trazado que el jugador (tráfico en el mismo
+sentido, no cruces con prioridad). Sin colisión física jugador↔IA (a diferencia de jugador↔edificio
+en `core/collision.ts`) — un jugador descuidado puede atravesar visualmente un coche de IA, gap
+conocido, no arreglado en este primer corte. Vehículos y offsets de aparición
+(`AI_VEHICLE_INITIAL_OFFSETS_M` en `main.ts`) son arbitrarios, no ligados a ningún dato real de
+tráfico de Barcelona.
 
 ### Pipeline de construcción de una ruta (decidido, no automatizado todavía)
 
@@ -116,12 +133,13 @@ con controlador **cinemático** (no motor de físicas — `src/scene/vehicle-con
 teclado (`keyboard-input.ts`), colisión bloqueante con edificios (`core/collision.ts`), detección de
 salida de calzada no bloqueante (`core/road-bounds.ts`), señalización real, maniobras de semáforo,
 cambio de sentido y aparcamiento con evaluación pass/fail, un primer HUD (velocímetro + checklist
-de maniobras, `src/ui/hud.ts` + `core/hud.ts`), y una pantalla final de resultado del examen
+de maniobras, `src/ui/hud.ts` + `core/hud.ts`), una pantalla final de resultado del examen
 (`core/exam-result.ts` + `src/ui/exam-result-screen.ts`): veredicto agregado apto/no apto —
 `'fail'` en cuanto cualquier maniobra evaluada falla (como una falta eliminatoria real, no hace
 falta llegar al final), `'pass'` solo al llegar al final de la ruta (radio de 10m al último
-waypoint) sin ningún fallo. Gate de licencia Pro completo (ver arriba), sin nada Pro que gatear
-todavía.
+waypoint) sin ningún fallo — y un primer corte de IA de tráfico (`core/traffic-ai.ts`, ver arriba):
+vehículos ambiente que respetan semáforos en rojo y guardan distancia. Gate de licencia Pro
+completo (ver arriba), sin nada Pro que gatear todavía.
 
 **No implementado todavía**:
 - Criterios de evaluación para `roundabout`, `lane-change` y `give-way` (los otros 3
@@ -129,8 +147,10 @@ todavía.
   arriba), pero solo `traffic-light` se usa en una ruta real hoy.
 - Físicas de vehículo "de verdad" (motor de físicas de Babylon) — el controlador actual es
   cinemático, decisión deliberada hasta ahora, no una limitación técnica descubierta.
-- IA de tráfico/peatones (ver pipeline arriba, paso 5 — pensado como genérico y reutilizable,
-  todavía no empezado).
+- IA de peatones (ver "IA de tráfico" arriba) y modelo de carriles/sentido contrario para la IA de
+  vehículos — hoy todos los coches de IA circulan en el mismo sentido que el jugador, por el mismo
+  trazado.
+- Colisión física jugador↔vehículo de IA (hoy solo hay jugador↔edificio, ver `core/collision.ts`).
 - Verificación del checkout de Stripe contra la API real (hoy solo probado con un fake HTTP
   inyectado en los tests del backend).
 - Defecto cosmético menor: triangulación del techo (roof cap) rota en edificios con huella
