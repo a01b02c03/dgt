@@ -315,6 +315,10 @@ function createScene(): Scene {
     // snapshot que el resto de la IA de tráfico.
     const corners = vehicleCorners(candidate.x, candidate.z, candidate.headingRad, VEHICLE_LENGTH_M, VEHICLE_WIDTH_M);
     const collision = findCollidingBuilding(corners, buildingShapes);
+    // otherVehicleCorners y pedestrianPoints son snapshots del frame anterior
+    // reutilizados más abajo también por la propia IA de tráfico (aiVehicles/
+    // oncomingVehicles forEach) para su propia colisión física entre sí y con
+    // peatones — un único snapshot por frame, no uno distinto por consumidor.
     const otherVehicleCorners = [...aiVehicles, ...oncomingVehicles].map((v) =>
       vehicleCorners(v.mesh.position.x, v.mesh.position.z, v.mesh.rotation.y, VEHICLE_LENGTH_M, VEHICLE_WIDTH_M),
     );
@@ -499,11 +503,34 @@ function createScene(): Scene {
       const speedLimitMs = currentSpeedLimitKmh(freeRoute.waypoints, aiBounds.segmentIndex) / 3.6;
       const stopLineArcM = nextStopArcLengthM(vehicle.state.distanceAlongRouteM, stopPointArcLengths, leadArcM);
 
-      vehicle.state = stepAiVehicle(vehicle.state, { speedLimitMs, stopLineArcM }, dtSeconds);
-      const pose = offsetPoseToLane(
-        poseAtArcLength(routePoints, arcLengthTable, vehicle.state.distanceAlongRouteM),
+      // Colisión física con otro vehículo de IA (propio sentido u oncoming) o
+      // un peatón: la distancia de seguimiento (leadArcM) ya evita casi
+      // siempre este caso dentro del mismo carril, pero esto es la red de
+      // seguridad — mismo patrón exacto que la colisión del jugador más
+      // arriba (rectanglesOverlap/SAT + punto-en-rectángulo), reutilizando el
+      // mismo snapshot otherVehicleCorners/pedestrianPoints del frame
+      // anterior. Si colisiona, se cancela el avance (igual que al chocar el
+      // jugador): se descarta el estado candidato y se mantiene la posición
+      // previa con velocidad 0.
+      const previousState = vehicle.state;
+      const candidateState = stepAiVehicle(previousState, { speedLimitMs, stopLineArcM }, dtSeconds);
+      const candidatePose = offsetPoseToLane(
+        poseAtArcLength(routePoints, arcLengthTable, candidateState.distanceAlongRouteM),
         LANE_OFFSET_M,
       );
+      const candidateCorners = vehicleCorners(candidatePose.x, candidatePose.z, candidatePose.headingRad, VEHICLE_LENGTH_M, VEHICLE_WIDTH_M);
+      const othersCorners = otherVehicleCorners.filter((_, otherIndex) => otherIndex !== index);
+      const collidesWithVehicle = findCollidingRectangle(candidateCorners, othersCorners) !== null;
+      const collidesWithPedestrian = findCollidingPoint(candidateCorners, pedestrianPoints) !== null;
+
+      vehicle.state =
+        collidesWithVehicle || collidesWithPedestrian
+          ? { distanceAlongRouteM: previousState.distanceAlongRouteM, speedMs: 0 }
+          : candidateState;
+      const pose =
+        collidesWithVehicle || collidesWithPedestrian
+          ? offsetPoseToLane(poseAtArcLength(routePoints, arcLengthTable, vehicle.state.distanceAlongRouteM), LANE_OFFSET_M)
+          : candidatePose;
       vehicle.mesh.position.x = pose.x;
       vehicle.mesh.position.z = pose.z;
       vehicle.mesh.rotation.y = pose.headingRad;
@@ -524,10 +551,9 @@ function createScene(): Scene {
     // Tráfico de IA en sentido contrario: mismos criterios que el tráfico
     // normal (semáforo en rojo por delante, peatón cruzando, o el vehículo de
     // delante en su propio sentido), pero sobre el sub-trazado invertido de
-    // oncomingRoute — no interactúan con el jugador ni con el tráfico del
-    // sentido normal (carriles distintos), y no hay colisión física entre
-    // ellos, mismo gap documentado en CLAUDE.md que el resto de la IA de
-    // tráfico.
+    // oncomingRoute — no interactúan con el jugador (arc-following, carriles
+    // distintos), pero sí tienen la misma red de seguridad de colisión física
+    // que el tráfico normal (ver el forEach de abajo).
     const oncomingRedLightArcLengths = freeRoute.maneuvers
       .filter((maneuver) => maneuver.type === 'traffic-light')
       .filter((maneuver) => getTrafficLightPhase(elapsedSimS, maneuver.atWaypointIndex) === 'red')
@@ -548,11 +574,32 @@ function createScene(): Scene {
       const speedLimitMs = currentSpeedLimitKmh(freeRoute.waypoints, oncomingBounds.segmentIndex) / 3.6;
       const stopLineArcM = nextStopArcLengthM(vehicle.state.distanceAlongRouteM, oncomingStopPointArcLengths, leadArcM);
 
-      vehicle.state = stepAiVehicle(vehicle.state, { speedLimitMs, stopLineArcM }, dtSeconds);
-      const pose = offsetPoseToLane(
-        poseAtArcLength(oncomingRoute.points, oncomingArcLengthTable, vehicle.state.distanceAlongRouteM),
+      // Misma red de seguridad de colisión física que en aiVehicles.forEach
+      // arriba (otherVehicleCorners cubre ambos sentidos, el índice de este
+      // vehículo dentro de ese snapshot combinado es aiVehicles.length + index).
+      const previousState = vehicle.state;
+      const candidateState = stepAiVehicle(previousState, { speedLimitMs, stopLineArcM }, dtSeconds);
+      const candidatePose = offsetPoseToLane(
+        poseAtArcLength(oncomingRoute.points, oncomingArcLengthTable, candidateState.distanceAlongRouteM),
         LANE_OFFSET_M,
       );
+      const candidateCorners = vehicleCorners(candidatePose.x, candidatePose.z, candidatePose.headingRad, VEHICLE_LENGTH_M, VEHICLE_WIDTH_M);
+      const selfIndex = aiVehicles.length + index;
+      const othersCorners = otherVehicleCorners.filter((_, otherIndex) => otherIndex !== selfIndex);
+      const collidesWithVehicle = findCollidingRectangle(candidateCorners, othersCorners) !== null;
+      const collidesWithPedestrian = findCollidingPoint(candidateCorners, pedestrianPoints) !== null;
+
+      vehicle.state =
+        collidesWithVehicle || collidesWithPedestrian
+          ? { distanceAlongRouteM: previousState.distanceAlongRouteM, speedMs: 0 }
+          : candidateState;
+      const pose =
+        collidesWithVehicle || collidesWithPedestrian
+          ? offsetPoseToLane(
+              poseAtArcLength(oncomingRoute.points, oncomingArcLengthTable, vehicle.state.distanceAlongRouteM),
+              LANE_OFFSET_M,
+            )
+          : candidatePose;
       vehicle.mesh.position.x = pose.x;
       vehicle.mesh.position.z = pose.z;
       vehicle.mesh.rotation.y = pose.headingRad;

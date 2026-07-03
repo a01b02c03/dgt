@@ -141,8 +141,18 @@ Los vehículos usan solape de rectángulos orientados (`rectanglesOverlap`, SAT)
 comprobar si una esquina cae dentro del otro — necesario para no perderse un cruce en T donde
 ninguna esquina de ninguno de los dos vehículos cae dentro del otro pero sí se solapan. Los
 peatones se tratan como un punto (su posición) dentro del rectángulo del jugador, sin footprint
-propio (son un cilindro pequeño, suficiente para este primer corte). No hay colisión física entre
-vehículos de IA entre sí, ni entre IA y peatones — solo jugador↔lo-demás.
+propio (son un cilindro pequeño, suficiente para este primer corte).
+
+Los vehículos de IA (propio sentido y oncoming) también tienen esta misma colisión física entre sí
+y con peatones, no solo con el jugador: en `main.ts`, cada `aiVehicles`/`oncomingVehicles.forEach`
+calcula su estado candidato (`stepAiVehicle`) y, si el rectángulo resultante solaparía con otro
+vehículo de IA o contendría a un peatón (reutilizando el mismo snapshot `otherVehicleCorners`/
+`pedestrianPoints` del frame que ya usa la colisión del jugador), descarta el candidato y mantiene
+su posición anterior con velocidad 0 — mismo patrón exacto de "cancelar el desplazamiento" que la
+colisión del jugador. En la práctica es sobre todo una red de seguridad: la distancia de
+seguimiento (`FOLLOWING_GAP_M`, ver `traffic-ai.ts`) ya evita casi siempre el solape dentro del
+mismo carril; esto cubre los casos que ese modelo 1D (por distancia acumulada) no ve, como un
+peatón que entra en la calzada muy cerca de un vehículo que ya iba a cruzar esa línea.
 
 ### Pipeline de construcción de una ruta (decidido, no automatizado todavía)
 
@@ -200,9 +210,10 @@ waypoint) sin ningún fallo — y un primer corte de IA de tráfico (`core/traff
 respetan semáforos en rojo, ceden el paso a peatones sobre la calzada y guardan distancia, tráfico
 en sentido contrario en el tramo de doble sentido de `ruta-01` (wp0-wp3), y 3 peatones reales (wp1,
 wp5, wp6) que cruzan de acera a acera, desfasados entre sí (`pedestrianPhaseOffsetS` +
-`advancePedestrian`, ver arriba). Cesión de paso del jugador: además de la colisión física,
-`ruta-01` tiene 3 maniobras `give-way` (una por cada paso de peatones real, ver arriba) que fallan
-si el jugador cruza con el peatón todavía en la calzada. Gate de licencia Pro completo (ver
+`advancePedestrian`, ver arriba), con colisión física también entre vehículos de IA entre sí y con
+peatones (no solo jugador↔lo-demás, ver arriba). Cesión de paso del jugador: además de la colisión
+física, `ruta-01` tiene 3 maniobras `give-way` (una por cada paso de peatones real, ver arriba) que
+fallan si el jugador cruza con el peatón todavía en la calzada. Gate de licencia Pro completo (ver
 arriba), sin nada Pro que gatear todavía.
 
 **No implementado todavía**:
@@ -214,9 +225,7 @@ arriba), sin nada Pro que gatear todavía.
 - Modelo de varios carriles en el mismo sentido (necesario para `lane-change`) — el modelo de
   carriles actual (ver arriba) solo distingue sentido propio/contrario, un carril cada uno.
 - Cruces con prioridad entre el tráfico de IA de distintas calles (solo hay cesión de paso a
-  peatones, ver arriba).
-- Colisión física entre vehículos de IA entre sí, o entre IA y peatones — hoy solo hay colisión
-  jugador↔lo-demás (edificios, vehículos de IA, peatones), ver `core/collision.ts`.
+  peatones, ver arriba; tampoco hay tráfico de IA en calles transversales todavía).
 - Verificación del checkout de Stripe contra la API real (hoy solo probado con un fake HTTP
   inyectado en los tests del backend).
 - Defecto cosmético menor: triangulación del techo (roof cap) rota en edificios con huella
