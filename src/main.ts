@@ -8,6 +8,12 @@ import { activateLicense, fetchSessionStatus, requestCheckout, validateLicense }
 import { getOrCreateDeviceId, readStoredLicense, writeStoredLicense } from './license/storage';
 import { createManeuverProgress, updateManeuverProgress } from './core/maneuver-tracker';
 import { createParallelParkEvalState, updateParallelParkOutcomes } from './core/parallel-park-evaluator';
+import {
+  createPedestrianState,
+  PEDESTRIAN_CROSSING_MARGIN_M,
+  pedestrianPose,
+  stepPedestrian,
+} from './core/pedestrian-ai';
 import { queryRoadBounds, ROAD_WIDTH_M } from './core/road-bounds';
 import { getTrafficLightPhase } from './core/traffic-light';
 import { createStopLineCrossingState, updateTrafficLightOutcomes } from './core/traffic-light-evaluator';
@@ -29,6 +35,7 @@ import {
   MANEUVER_COMPLETED_COLOR,
   MANEUVER_PENDING_COLOR,
 } from './scene/maneuver-markers';
+import { buildPedestrianMesh } from './scene/pedestrian-mesh';
 import { buildRoadMesh } from './scene/road-mesh';
 import { buildSignMarkers } from './scene/sign-markers';
 import { buildTrafficLightMarkers, TRAFFIC_LIGHT_PHASE_COLORS } from './scene/traffic-light-markers';
@@ -193,6 +200,24 @@ function createScene(): Scene {
     mesh.rotation.y = pose.headingRad;
     return { mesh, state: createAiVehicleState(offsetM) };
   });
+
+  // Peatones: uno por cada señal 'pedestrian-crossing' de la ruta, cruzando
+  // perpendicular a la calzada en ese punto (ver core/pedestrian-ai.ts).
+  // ruta-01 no tiene todavía ninguna señal de este tipo (ver CLAUDE.md), así
+  // que este array está vacío hoy y no tiene efecto visible.
+  const pedestrianCrossingHalfWidthM = ROAD_WIDTH_M / 2 + PEDESTRIAN_CROSSING_MARGIN_M;
+  const pedestrians = freeRoute.signs
+    .filter((sign) => sign.type === 'pedestrian-crossing')
+    .map((sign) => {
+      const crossing = { position: toLocalMeters(origin, sign.position), headingDeg: sign.headingDeg };
+      const { mesh } = buildPedestrianMesh(scene);
+      const state = createPedestrianState(-pedestrianCrossingHalfWidthM);
+      const pose = pedestrianPose(crossing, state);
+      mesh.position.x = pose.x;
+      mesh.position.z = pose.z;
+      mesh.rotation.y = pose.headingRad;
+      return { mesh, crossing, state };
+    });
 
   const maneuverMarkers = buildManeuverMarkers(freeRoute, origin, scene);
   const trafficLightMarkers = buildTrafficLightMarkers(freeRoute, origin, scene);
@@ -359,6 +384,17 @@ function createScene(): Scene {
       vehicle.mesh.position.x = pose.x;
       vehicle.mesh.position.z = pose.z;
       vehicle.mesh.rotation.y = pose.headingRad;
+    });
+
+    // Peatones: cruzan de acera a acera de forma autónoma (ver
+    // core/pedestrian-ai.ts). Ningún vehículo (jugador ni IA) les cede el
+    // paso todavía, gap conocido documentado en CLAUDE.md.
+    pedestrians.forEach((pedestrian) => {
+      pedestrian.state = stepPedestrian(pedestrian.state, pedestrianCrossingHalfWidthM, dtSeconds);
+      const pose = pedestrianPose(pedestrian.crossing, pedestrian.state);
+      pedestrian.mesh.position.x = pose.x;
+      pedestrian.mesh.position.z = pose.z;
+      pedestrian.mesh.rotation.y = pose.headingRad;
     });
 
     // Veredicto agregado del examen (ver core/exam-result.ts): 'fail' en cuanto
