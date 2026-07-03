@@ -61,10 +61,14 @@ extruidos desde sus huellas OSM (`src/routes/ruta-01/buildings.ts`). El método 
 cada dato (señales, semáforos, exclusión de cruces ambiguos) está documentado en el comentario de
 cabecera de `route.ts` — consultarlo antes de asumir que un dato es aproximado.
 
-De los 6 `ManeuverType` del modelo, solo `traffic-light` tiene criterios de evaluación pass/fail
-implementados (`src/core/traffic-light.ts` + `traffic-light-evaluator.ts`) y es el único que usa
-`ruta-01`. `parallel-park`, `roundabout`, `u-turn`, `lane-change` y `give-way` existen en el tipo
-pero no tienen lógica de evaluación ni maniobras instanciadas en ninguna ruta todavía.
+De los 6 `ManeuverType` del modelo, `traffic-light` (`traffic-light.ts` + `traffic-light-evaluator.ts`),
+`u-turn` (`u-turn-evaluator.ts`) y `parallel-park` (`parallel-park-evaluator.ts`) tienen ya criterios
+de evaluación pass/fail — ver la cabecera de cada archivo para el criterio exacto. Solo
+`traffic-light` se usa hoy en `ruta-01`; `u-turn` y `parallel-park` están conectados en el bucle de
+`main.ts` pero sin ninguna maniobra instanciada en ninguna ruta todavía, así que no tienen efecto
+visible hasta que una ruta real los use. `roundabout`, `lane-change` y `give-way` siguen sin
+criterios: su evaluación real depende de IA de tráfico (ceder el paso, ceda el paso) o de un modelo
+de carriles (`lane-change`) que este proyecto no tiene todavía — ver "Estado y próximos pasos".
 
 ### Pipeline de construcción de una ruta (decidido, no automatizado todavía)
 
@@ -115,9 +119,9 @@ con evaluación pass/fail, y un primer HUD (velocímetro + checklist de maniobra
 `core/hud.ts`). Gate de licencia Pro completo (ver arriba), sin nada Pro que gatear todavía.
 
 **No implementado todavía**:
-- Criterios de evaluación para los otros 5 `ManeuverType` (aparcamiento, rotonda, cambio de
-  sentido, cambio de carril, ceda el paso) — hoy solo `traffic-light` tiene lógica y es el único
-  usado en `ruta-01`.
+- Criterios de evaluación para `roundabout`, `lane-change` y `give-way` (los otros 3
+  `ManeuverType` sin lógica) — `traffic-light`, `u-turn` y `parallel-park` ya la tienen (ver
+  arriba), pero solo `traffic-light` se usa en una ruta real hoy.
 - Pantalla de resultado final del examen (apto/no apto agregado); hoy el HUD solo muestra estado
   por maniobra individual, no hay resumen al terminar la ruta.
 - Físicas de vehículo "de verdad" (motor de físicas de Babylon) — el controlador actual es

@@ -6,9 +6,11 @@ import { licenseStatusView } from './core/license';
 import { activateLicense, fetchSessionStatus, requestCheckout, validateLicense } from './license/api';
 import { getOrCreateDeviceId, readStoredLicense, writeStoredLicense } from './license/storage';
 import { createManeuverProgress, updateManeuverProgress } from './core/maneuver-tracker';
+import { createParallelParkEvalState, updateParallelParkOutcomes } from './core/parallel-park-evaluator';
 import { queryRoadBounds, ROAD_WIDTH_M } from './core/road-bounds';
 import { getTrafficLightPhase } from './core/traffic-light';
 import { createStopLineCrossingState, updateTrafficLightOutcomes } from './core/traffic-light-evaluator';
+import { createUTurnEvalState, updateUTurnOutcomes } from './core/u-turn-evaluator';
 import { getBuildings, getFreeRoutes } from './routes';
 import { buildBuildingMeshes } from './scene/building-mesh';
 import { attachKeyboardInput } from './scene/keyboard-input';
@@ -166,6 +168,8 @@ function createScene(): Scene {
   const trafficLightMarkers = buildTrafficLightMarkers(freeRoute, origin, scene);
   let maneuverProgress = createManeuverProgress(freeRoute.maneuvers);
   let crossingState = createStopLineCrossingState(freeRoute.maneuvers.length);
+  let uTurnEvalState = createUTurnEvalState(freeRoute.maneuvers.length);
+  let parallelParkEvalState = createParallelParkEvalState(freeRoute.maneuvers.length);
 
   const hud = buildHud(freeRoute.maneuvers);
   maneuverProgress.forEach((entry, index) => hud.setManeuverState(index, maneuverChecklistLabel(entry)));
@@ -246,6 +250,39 @@ function createScene(): Scene {
     crossingState = trafficLightResult.crossingState;
     maneuverProgress.forEach((entry, index) => {
       if (entry.outcome === previousOutcomes[index]) {
+        return;
+      }
+      hud.setManeuverState(index, maneuverChecklistLabel(entry));
+      console.log(`Maniobra "${entry.maneuver.description}": outcome ${entry.outcome}`);
+    });
+
+    // Evaluación pass/fail de maniobras u-turn y parallel-park: ver
+    // u-turn-evaluator.ts / parallel-park-evaluator.ts para el criterio de
+    // cada una. Ninguna ruta instancia todavía estos tipos de maniobra
+    // (ver CLAUDE.md), así que estas llamadas no tienen efecto visible hoy.
+    const previousUTurnParkOutcomes = maneuverProgress.map((entry) => entry.outcome);
+    const uTurnResult = updateUTurnOutcomes(
+      maneuverProgress,
+      uTurnEvalState,
+      { headingRad: vehicleState.headingRad },
+      bounds.onRoad,
+      Boolean(collision),
+    );
+    maneuverProgress = uTurnResult.progress;
+    uTurnEvalState = uTurnResult.evalState;
+    const parallelParkResult = updateParallelParkOutcomes(
+      maneuverProgress,
+      parallelParkEvalState,
+      freeRoute.waypoints,
+      routePoints,
+      { x: vehicleState.x, z: vehicleState.z, headingRad: vehicleState.headingRad, speedMs: vehicleState.speedMs },
+      bounds.onRoad,
+      Boolean(collision),
+    );
+    maneuverProgress = parallelParkResult.progress;
+    parallelParkEvalState = parallelParkResult.evalState;
+    maneuverProgress.forEach((entry, index) => {
+      if (entry.outcome === previousUTurnParkOutcomes[index]) {
         return;
       }
       hud.setManeuverState(index, maneuverChecklistLabel(entry));
