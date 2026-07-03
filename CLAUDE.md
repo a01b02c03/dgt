@@ -78,10 +78,14 @@ por distancia acumulada (`buildArcLengthTable` + `poseAtArcLength`), la misma qu
 pero proyectada (`estimateArcLength`, ya que el vehículo del jugador se mueve libre en 2D, no por
 arco). Cada coche de IA frena a una distancia fija (`BRAKING_DISTANCE_M`, sin modelo de frenada
 real) ante lo primero que tenga por delante: un semáforo en rojo sin cruzar (reutiliza
-`getTrafficLightPhase`) o el vehículo inmediatamente delante — que puede ser otro coche de IA o el
-propio jugador — guardando `FOLLOWING_GAP_M`. Vehículos y offsets de aparición
-(`AI_VEHICLE_INITIAL_OFFSETS_M` en `main.ts`) son arbitrarios, no ligados a ningún dato real de
-tráfico de Barcelona.
+`getTrafficLightPhase`), **un peatón sobre la calzada** (`isPedestrianInRoadway`, ver abajo — cede
+el paso parando del todo, no solo reduciendo velocidad), o el vehículo inmediatamente delante — que
+puede ser otro coche de IA o el propio jugador — guardando `FOLLOWING_GAP_M`.
+`nextStopArcLengthM` toma una lista genérica de "puntos de parada" (`obstacleArcLengthsM`): en
+`main.ts` se concatenan semáforos en rojo y peatones bloqueando en una sola lista antes de
+llamarla, sin que `traffic-ai.ts` necesite saber la diferencia entre ambos. Vehículos y offsets de
+aparición (`AI_VEHICLE_INITIAL_OFFSETS_M` en `main.ts`) son arbitrarios, no ligados a ningún dato
+real de tráfico de Barcelona.
 
 **Carriles / sentido contrario** (`core/lanes.ts`): la calzada de `ROAD_WIDTH_M` (6m) se divide en
 dos mitades de 3m, una por sentido, centradas en `±LANE_OFFSET_M` (1.5m) — `offsetPoseToLane`
@@ -111,6 +115,10 @@ del Ajuntament — ver el comentario de cabecera de `route.ts` para el método d
 Carrer de la Marina y no a la calle transversal del mismo cruce). Otros 3 candidatos del mismo
 cruce se descartaron por pertenecer claramente a la transversal, o por ambigüedad genuina en la
 propia esquina (ver `route.ts`) — no es que falte verificarlos, ya se revisaron y no aplican.
+El peatón en sí no reacciona al tráfico (sigue su ciclo de cruce pase lo que pase) — es la IA de
+vehículos la que le cede el paso, ver `isPedestrianInRoadway` arriba. Simplificación conocida: los
+3 peatones de `ruta-01` arrancan en el mismo estado (sin desfase entre ellos, a diferencia de los
+semáforos que sí tienen `trafficLightPhaseOffsetS`), así que hoy cruzan sincronizados.
 
 Ningún vehículo (jugador ni IA) cede el paso a peatones todavía, ni hay colisión física
 jugador↔vehículo de IA ni jugador↔peatón (a diferencia de jugador↔edificio en `core/collision.ts`)
@@ -168,9 +176,10 @@ de maniobras, `src/ui/hud.ts` + `core/hud.ts`), una pantalla final de resultado 
 falta llegar al final), `'pass'` solo al llegar al final de la ruta (radio de 10m al último
 waypoint) sin ningún fallo — y un primer corte de IA de tráfico (`core/traffic-ai.ts` +
 `core/pedestrian-ai.ts` + `core/lanes.ts`, ver arriba): vehículos ambiente en su propio carril que
-respetan semáforos en rojo y guardan distancia, tráfico en sentido contrario en el tramo de doble
-sentido de `ruta-01` (wp0-wp3), y 3 peatones reales (wp1, wp5, wp6) que cruzan de acera a acera.
-Gate de licencia Pro completo (ver arriba), sin nada Pro que gatear todavía.
+respetan semáforos en rojo, ceden el paso a peatones sobre la calzada y guardan distancia, tráfico
+en sentido contrario en el tramo de doble sentido de `ruta-01` (wp0-wp3), y 3 peatones reales (wp1,
+wp5, wp6) que cruzan de acera a acera. Gate de licencia Pro completo (ver arriba), sin nada Pro que
+gatear todavía.
 
 **No implementado todavía**:
 - Criterios de evaluación para `roundabout`, `lane-change` y `give-way` (los otros 3
@@ -180,8 +189,9 @@ Gate de licencia Pro completo (ver arriba), sin nada Pro que gatear todavía.
   cinemático, decisión deliberada hasta ahora, no una limitación técnica descubierta.
 - Modelo de varios carriles en el mismo sentido (necesario para `lane-change`) — el modelo de
   carriles actual (ver arriba) solo distingue sentido propio/contrario, un carril cada uno.
-- Ceder el paso: ningún vehículo (jugador ni IA) cede el paso a peatones todavía, ni hay cruces con
-  prioridad entre el tráfico de IA de distintas calles.
+- Ceder el paso del jugador: nada le obliga a parar ante un peatón (solo la IA de vehículos lo
+  hace); tampoco hay cruces con prioridad entre el tráfico de IA de distintas calles.
+- Desfase entre los 3 peatones de `ruta-01` — hoy cruzan sincronizados (ver arriba).
 - Colisión física jugador↔vehículo de IA y jugador↔peatón (hoy solo hay jugador↔edificio, ver
   `core/collision.ts`).
 - Verificación del checkout de Stripe contra la API real (hoy solo probado con un fake HTTP

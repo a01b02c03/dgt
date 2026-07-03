@@ -115,17 +115,18 @@ function clamp(value: number, min: number, max: number): number {
 
 /**
  * Punto de parada más cercano por delante de `currentArcM`, en distancia
- * acumulada: el mínimo entre los semáforos en rojo que aún no se han cruzado
- * y el hueco de seguridad respecto al vehículo de delante. `null` si no hay
- * ninguno (vía libre).
+ * acumulada: el mínimo entre los obstáculos sin cruzar (semáforos en rojo,
+ * peatones cruzando la calzada — cualquier cosa que obligue a parar, ver
+ * las llamadas en main.ts) y el hueco de seguridad respecto al vehículo de
+ * delante. `null` si no hay ninguno (vía libre).
  */
 export function nextStopArcLengthM(
   currentArcM: number,
-  redLightArcLengthsM: number[],
+  obstacleArcLengthsM: number[],
   leadVehicleArcM: number | null,
   followingGapM: number = FOLLOWING_GAP_M,
 ): number | null {
-  const candidates = redLightArcLengthsM.filter((arc) => arc > currentArcM);
+  const candidates = obstacleArcLengthsM.filter((arc) => arc > currentArcM);
   if (leadVehicleArcM !== null) {
     candidates.push(leadVehicleArcM - followingGapM);
   }

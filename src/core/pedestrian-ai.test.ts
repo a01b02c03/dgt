@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { createPedestrianState, pedestrianPose, stepPedestrian } from './pedestrian-ai';
+import { createPedestrianState, isPedestrianInRoadway, pedestrianPose, stepPedestrian } from './pedestrian-ai';
+
+describe('isPedestrianInRoadway', () => {
+  it('is true while within the road half-width of the crossing axis', () => {
+    expect(isPedestrianInRoadway({ lateralOffsetM: 2, direction: 1, waitingS: 0 }, 3)).toBe(true);
+    expect(isPedestrianInRoadway({ lateralOffsetM: -2, direction: -1, waitingS: 0 }, 3)).toBe(true);
+  });
+
+  it('is false once past the road edge, into the sidewalk margin', () => {
+    expect(isPedestrianInRoadway({ lateralOffsetM: 4, direction: 1, waitingS: 4 }, 3)).toBe(false);
+    expect(isPedestrianInRoadway({ lateralOffsetM: -4, direction: -1, waitingS: 4 }, 3)).toBe(false);
+  });
+});
 
 describe('stepPedestrian', () => {
   it('walks forward along the crossing axis', () => {

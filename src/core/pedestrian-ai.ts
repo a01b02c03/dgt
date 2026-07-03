@@ -29,10 +29,22 @@ export function createPedestrianState(startLateralOffsetM: number): PedestrianSt
 }
 
 /**
+ * Si el peatón está físicamente sobre la calzada (no en la acera): dentro de
+ * ±roadHalfWidthM del eje del paso. Usado por la IA de vehículos para saber
+ * si deben ceder el paso (ver core/traffic-ai.ts, nextStopArcLengthM) — un
+ * peatón esperando en la acera (dentro de crossingHalfWidthM pero fuera de
+ * roadHalfWidthM) no bloquea el tráfico todavía.
+ */
+export function isPedestrianInRoadway(state: PedestrianState, roadHalfWidthM: number): boolean {
+  return Math.abs(state.lateralOffsetM) <= roadHalfWidthM;
+}
+
+/**
  * Avanza un peatón: camina en línea recta de un extremo al otro del paso
  * (definido por ±crossingHalfWidthM) y espera DWELL_TIME_S en cada acera antes
- * de volver a cruzar. No reacciona al tráfico — un vehículo no cede el paso a
- * estos peatones todavía, gap conocido (ver CLAUDE.md).
+ * de volver a cruzar. No reacciona al tráfico él mismo (sigue cruzando aunque
+ * un coche no vaya a parar) — es la IA de vehículos la que le cede el paso,
+ * ver isPedestrianInRoadway arriba.
  */
 export function stepPedestrian(
   state: PedestrianState,

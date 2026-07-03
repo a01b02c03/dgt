@@ -16,6 +16,7 @@ import { createManeuverProgress, updateManeuverProgress } from './core/maneuver-
 import { createParallelParkEvalState, updateParallelParkOutcomes } from './core/parallel-park-evaluator';
 import {
   createPedestrianState,
+  isPedestrianInRoadway,
   PEDESTRIAN_CROSSING_MARGIN_M,
   pedestrianPose,
   stepPedestrian,
@@ -381,14 +382,24 @@ function createScene(): Scene {
       marker.material.diffuseColor = TRAFFIC_LIGHT_PHASE_COLORS[phase];
     });
 
-    // Tráfico de IA: cada vehículo frena ante semáforos en rojo por delante o
-    // ante el vehículo inmediatamente delante suyo (jugador u otro coche de
-    // IA), ver core/traffic-ai.ts. Se usa un snapshot de las distancias antes
-    // de este frame para que el orden de iteración no afecte al resultado.
+    // Peatones actualmente sobre la calzada (no en la acera, ver
+    // isPedestrianInRoadway): la IA de vehículos les cede el paso igual que a
+    // un semáforo en rojo, usando su posición del frame anterior (mismo
+    // patrón de snapshot que aiArcsBeforeStep) — se actualizan más abajo.
+    const blockingPedestrianForwardArcs = pedestrians
+      .filter((pedestrian) => isPedestrianInRoadway(pedestrian.state, ROAD_WIDTH_M / 2))
+      .map((pedestrian) => estimateArcLength(routePoints, arcLengthTable, pedestrian.crossing.position));
+
+    // Tráfico de IA: cada vehículo frena ante semáforos en rojo por delante,
+    // un peatón cruzando la calzada, o el vehículo inmediatamente delante
+    // suyo (jugador u otro coche de IA), ver core/traffic-ai.ts. Se usa un
+    // snapshot de las distancias antes de este frame para que el orden de
+    // iteración no afecte al resultado.
     const redLightArcLengths = freeRoute.maneuvers
       .filter((maneuver) => maneuver.type === 'traffic-light')
       .filter((maneuver) => getTrafficLightPhase(elapsedSimS, maneuver.atWaypointIndex) === 'red')
       .map((maneuver) => arcLengthTable[maneuver.atWaypointIndex]);
+    const stopPointArcLengths = [...redLightArcLengths, ...blockingPedestrianForwardArcs];
     const playerArcM = estimateArcLength(routePoints, arcLengthTable, { x: vehicleState.x, z: vehicleState.z });
     const aiArcsBeforeStep = aiVehicles.map((vehicle) => vehicle.state.distanceAlongRouteM);
 
@@ -402,7 +413,7 @@ function createScene(): Scene {
         z: vehicle.mesh.position.z,
       });
       const speedLimitMs = currentSpeedLimitKmh(freeRoute.waypoints, aiBounds.segmentIndex) / 3.6;
-      const stopLineArcM = nextStopArcLengthM(vehicle.state.distanceAlongRouteM, redLightArcLengths, leadArcM);
+      const stopLineArcM = nextStopArcLengthM(vehicle.state.distanceAlongRouteM, stopPointArcLengths, leadArcM);
 
       vehicle.state = stepAiVehicle(vehicle.state, { speedLimitMs, stopLineArcM }, dtSeconds);
       const pose = offsetPoseToLane(
@@ -414,17 +425,31 @@ function createScene(): Scene {
       vehicle.mesh.rotation.y = pose.headingRad;
     });
 
+    // Peatones sobre la calzada dentro del tramo de doble sentido, en la
+    // distancia acumulada invertida de oncomingRoute (ver estimateArcLength
+    // en traffic-ai.ts, genérica sobre cualquier lista de puntos ordenada).
+    const blockingPedestrianMirroredArcs = pedestrians
+      .filter((pedestrian) => isPedestrianInRoadway(pedestrian.state, ROAD_WIDTH_M / 2))
+      .filter(
+        (pedestrian) =>
+          estimateArcLength(routePoints, arcLengthTable, pedestrian.crossing.position) <=
+          arcLengthTable[oncomingRoute.twoWayEndIndex],
+      )
+      .map((pedestrian) => estimateArcLength(oncomingRoute.points, oncomingArcLengthTable, pedestrian.crossing.position));
+
     // Tráfico de IA en sentido contrario: mismos criterios que el tráfico
-    // normal (semáforo en rojo por delante o el vehículo de delante en su
-    // propio sentido), pero sobre el sub-trazado invertido de oncomingRoute
-    // — no interactúan con el jugador ni con el tráfico del sentido normal
-    // (carriles distintos), y no hay colisión física entre ellos, mismo gap
-    // documentado en CLAUDE.md que el resto de la IA de tráfico.
+    // normal (semáforo en rojo por delante, peatón cruzando, o el vehículo de
+    // delante en su propio sentido), pero sobre el sub-trazado invertido de
+    // oncomingRoute — no interactúan con el jugador ni con el tráfico del
+    // sentido normal (carriles distintos), y no hay colisión física entre
+    // ellos, mismo gap documentado en CLAUDE.md que el resto de la IA de
+    // tráfico.
     const oncomingRedLightArcLengths = freeRoute.maneuvers
       .filter((maneuver) => maneuver.type === 'traffic-light')
       .filter((maneuver) => getTrafficLightPhase(elapsedSimS, maneuver.atWaypointIndex) === 'red')
       .map((maneuver) => mirroredArcLengthOfWaypoint(oncomingArcLengthTable, oncomingRoute.twoWayEndIndex, maneuver.atWaypointIndex))
       .filter((arc): arc is number => arc !== null);
+    const oncomingStopPointArcLengths = [...oncomingRedLightArcLengths, ...blockingPedestrianMirroredArcs];
     const oncomingArcsBeforeStep = oncomingVehicles.map((vehicle) => vehicle.state.distanceAlongRouteM);
 
     oncomingVehicles.forEach((vehicle, index) => {
@@ -437,7 +462,7 @@ function createScene(): Scene {
         z: vehicle.mesh.position.z,
       });
       const speedLimitMs = currentSpeedLimitKmh(freeRoute.waypoints, oncomingBounds.segmentIndex) / 3.6;
-      const stopLineArcM = nextStopArcLengthM(vehicle.state.distanceAlongRouteM, oncomingRedLightArcLengths, leadArcM);
+      const stopLineArcM = nextStopArcLengthM(vehicle.state.distanceAlongRouteM, oncomingStopPointArcLengths, leadArcM);
 
       vehicle.state = stepAiVehicle(vehicle.state, { speedLimitMs, stopLineArcM }, dtSeconds);
       const pose = offsetPoseToLane(
@@ -450,8 +475,10 @@ function createScene(): Scene {
     });
 
     // Peatones: cruzan de acera a acera de forma autónoma (ver
-    // core/pedestrian-ai.ts). Ningún vehículo (jugador ni IA) les cede el
-    // paso todavía, gap conocido documentado en CLAUDE.md.
+    // core/pedestrian-ai.ts) — el peatón no reacciona al tráfico, es la IA de
+    // vehículos la que le cede el paso (ver más arriba). El jugador no tiene
+    // nada que le obligue a ceder: sigue siendo su responsabilidad como en un
+    // examen real, sin colisión física jugador↔peatón todavía (ver CLAUDE.md).
     pedestrians.forEach((pedestrian) => {
       pedestrian.state = stepPedestrian(pedestrian.state, pedestrianCrossingHalfWidthM, dtSeconds);
       const pose = pedestrianPose(pedestrian.crossing, pedestrian.state);
