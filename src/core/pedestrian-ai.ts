@@ -28,6 +28,44 @@ export function createPedestrianState(startLateralOffsetM: number): PedestrianSt
   return { lateralOffsetM: startLateralOffsetM, direction: 1, waitingS: 0 };
 }
 
+// Espaciado placeholder entre el desfase de peatones consecutivos (por índice
+// de aparición en la ruta) — mismo patrón que PHASE_OFFSET_SPACING_S en
+// traffic-light.ts, solo para que no arranquen todos sincronizados.
+const PHASE_OFFSET_SPACING_S = 5;
+
+/** Desfase determinista (no aleatorio) de un peatón según su índice de aparición, mismo patrón que trafficLightPhaseOffsetS. */
+export function pedestrianPhaseOffsetS(pedestrianIndex: number): number {
+  return pedestrianIndex * PHASE_OFFSET_SPACING_S;
+}
+
+// Paso de la simulación usada para adelantar el estado inicial (ver
+// advancePedestrian): tiene que ser lo bastante pequeño para no saltarse una
+// transición espera<->cruce dentro del intervalo de desfase.
+const FAST_FORWARD_STEP_S = 0.5;
+
+/**
+ * Adelanta el estado de un peatón `offsetS` segundos antes de empezar a
+ * renderizarlo, en incrementos de FAST_FORWARD_STEP_S (no un único paso
+ * grande) para que las transiciones espera<->cruce que caigan dentro de ese
+ * intervalo se resuelvan igual que en la simulación real fotograma a
+ * fotograma. Usado una sola vez al construir la escena, con
+ * pedestrianPhaseOffsetS, para desincronizar a los peatones entre sí.
+ */
+export function advancePedestrian(
+  state: PedestrianState,
+  crossingHalfWidthM: number,
+  offsetS: number,
+): PedestrianState {
+  let next = state;
+  let remaining = offsetS;
+  while (remaining > 0) {
+    const step = Math.min(FAST_FORWARD_STEP_S, remaining);
+    next = stepPedestrian(next, crossingHalfWidthM, step);
+    remaining -= step;
+  }
+  return next;
+}
+
 /**
  * Si el peatón está físicamente sobre la calzada (no en la acera): dentro de
  * ±roadHalfWidthM del eje del paso. Usado por la IA de vehículos para saber

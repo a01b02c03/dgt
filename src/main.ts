@@ -16,9 +16,11 @@ import { createGiveWayEvalState, updateGiveWayOutcomes } from './core/give-way-e
 import { createManeuverProgress, updateManeuverProgress } from './core/maneuver-tracker';
 import { createParallelParkEvalState, updateParallelParkOutcomes } from './core/parallel-park-evaluator';
 import {
+  advancePedestrian,
   createPedestrianState,
   isPedestrianInRoadway,
   PEDESTRIAN_CROSSING_MARGIN_M,
+  pedestrianPhaseOffsetS,
   pedestrianPose,
   stepPedestrian,
 } from './core/pedestrian-ai';
@@ -231,14 +233,19 @@ function createScene(): Scene {
   );
 
   // Peatones: uno por cada señal 'pedestrian-crossing' de la ruta, cruzando
-  // perpendicular a la calzada en ese punto (ver core/pedestrian-ai.ts).
+  // perpendicular a la calzada en ese punto (ver core/pedestrian-ai.ts). Cada
+  // uno arranca desfasado según su índice de aparición (pedestrianPhaseOffsetS,
+  // mismo patrón que trafficLightPhaseOffsetS) para que no crucen todos
+  // sincronizados — el estado inicial se adelanta ese desfase con
+  // advancePedestrian antes del primer frame.
   const pedestrianCrossingHalfWidthM = ROAD_WIDTH_M / 2 + PEDESTRIAN_CROSSING_MARGIN_M;
   const pedestrians = freeRoute.signs
     .filter((sign) => sign.type === 'pedestrian-crossing')
-    .map((sign) => {
+    .map((sign, index) => {
       const crossing = { position: toLocalMeters(origin, sign.position), headingDeg: sign.headingDeg };
       const { mesh } = buildPedestrianMesh(scene);
-      const state = createPedestrianState(-pedestrianCrossingHalfWidthM);
+      const initialState = createPedestrianState(-pedestrianCrossingHalfWidthM);
+      const state = advancePedestrian(initialState, pedestrianCrossingHalfWidthM, pedestrianPhaseOffsetS(index));
       const pose = pedestrianPose(crossing, state);
       mesh.position.x = pose.x;
       mesh.position.z = pose.z;

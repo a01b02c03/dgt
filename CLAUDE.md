@@ -116,13 +116,27 @@ Carrer de la Marina y no a la calle transversal del mismo cruce). Otros 3 candid
 cruce se descartaron por pertenecer claramente a la transversal, o por ambigüedad genuina en la
 propia esquina (ver `route.ts`) — no es que falte verificarlos, ya se revisaron y no aplican.
 El peatón en sí no reacciona al tráfico (sigue su ciclo de cruce pase lo que pase) — es la IA de
-vehículos la que le cede el paso, ver `isPedestrianInRoadway` arriba. Simplificación conocida: los
-3 peatones de `ruta-01` arrancan en el mismo estado (sin desfase entre ellos, a diferencia de los
-semáforos que sí tienen `trafficLightPhaseOffsetS`), así que hoy cruzan sincronizados.
+vehículos la que le cede el paso, ver `isPedestrianInRoadway` arriba. Cada peatón arranca desfasado
+según su índice de aparición en la ruta (`pedestrianPhaseOffsetS`, mismo patrón de espaciado
+determinista que `trafficLightPhaseOffsetS` en `traffic-light.ts`): a diferencia de los semáforos
+(cuya fase se recalcula cada frame a partir de `elapsedSimS`, sin estado propio), el modelo de
+peatón es incremental (`stepPedestrian` acumula `dtSeconds` sobre el estado del frame anterior), así
+que aplicar el desfase requiere simular ese intervalo por adelantado una sola vez al construir la
+escena (`advancePedestrian`, en incrementos pequeños para no saltarse una transición
+espera↔cruce dentro del propio desfase) en vez de sumarlo a un reloj absoluto.
 
-La IA de vehículos cede el paso a peatones (ver arriba); el jugador no tiene nada que le obligue a
-hacerlo. Colisión física del jugador con vehículos de IA y con peatones (`core/collision.ts`,
-`findCollidingRectangle`/`findCollidingPoint`): bloquea el movimiento igual que con un edificio.
+La IA de vehículos cede el paso a peatones (ver arriba). El jugador tiene dos consecuencias
+distintas si no lo hace: colisión física del jugador con vehículos de IA y con peatones
+(`core/collision.ts`, `findCollidingRectangle`/`findCollidingPoint`), que bloquea el movimiento
+igual que con un edificio; y, en los 3 pasos reales de `ruta-01` (ver `give-way-evaluator.ts`), una
+maniobra `give-way` que se marca `'fail'` si el jugador cruza la línea de ese paso con el peatón
+todavía sobre la calzada — mismo evento de cruce que `traffic-light-evaluator.ts`
+(`projectOntoHeadingAxis`), pero el criterio es la presencia del peatón en vez de la fase del
+semáforo. El emparejamiento maniobra↔peatón (`giveWayPedestrianIndices` en `main.ts`) es "el peatón
+más cercano al waypoint de la maniobra", calculado una sola vez al construir la escena — funciona
+porque cada maniobra `give-way` de `ruta-01` está anclada al mismo waypoint que ya identificaba a
+ese paso de peatones en la verificación de datos (ver cabecera de `route.ts`).
+
 Los vehículos usan solape de rectángulos orientados (`rectanglesOverlap`, SAT) en vez de solo
 comprobar si una esquina cae dentro del otro — necesario para no perderse un cruce en T donde
 ninguna esquina de ninguno de los dos vehículos cae dentro del otro pero sí se solapan. Los
@@ -185,20 +199,22 @@ waypoint) sin ningún fallo — y un primer corte de IA de tráfico (`core/traff
 `core/pedestrian-ai.ts` + `core/lanes.ts`, ver arriba): vehículos ambiente en su propio carril que
 respetan semáforos en rojo, ceden el paso a peatones sobre la calzada y guardan distancia, tráfico
 en sentido contrario en el tramo de doble sentido de `ruta-01` (wp0-wp3), y 3 peatones reales (wp1,
-wp5, wp6) que cruzan de acera a acera. Gate de licencia Pro completo (ver arriba), sin nada Pro que
-gatear todavía.
+wp5, wp6) que cruzan de acera a acera, desfasados entre sí (`pedestrianPhaseOffsetS` +
+`advancePedestrian`, ver arriba). Cesión de paso del jugador: además de la colisión física,
+`ruta-01` tiene 3 maniobras `give-way` (una por cada paso de peatones real, ver arriba) que fallan
+si el jugador cruza con el peatón todavía en la calzada. Gate de licencia Pro completo (ver
+arriba), sin nada Pro que gatear todavía.
 
 **No implementado todavía**:
-- Criterios de evaluación para `roundabout`, `lane-change` y `give-way` (los otros 3
-  `ManeuverType` sin lógica) — `traffic-light`, `u-turn` y `parallel-park` ya la tienen (ver
-  arriba), pero solo `traffic-light` se usa en una ruta real hoy.
+- Criterios de evaluación para `roundabout` y `lane-change` (los otros 2 `ManeuverType` sin
+  lógica) — `traffic-light`, `u-turn`, `parallel-park` y `give-way` ya la tienen (ver arriba), pero
+  solo `traffic-light` y `give-way` se usan en una ruta real hoy.
 - Físicas de vehículo "de verdad" (motor de físicas de Babylon) — el controlador actual es
   cinemático, decisión deliberada hasta ahora, no una limitación técnica descubierta.
 - Modelo de varios carriles en el mismo sentido (necesario para `lane-change`) — el modelo de
   carriles actual (ver arriba) solo distingue sentido propio/contrario, un carril cada uno.
-- Ceder el paso del jugador: nada le obliga a parar ante un peatón (solo la IA de vehículos lo
-  hace); tampoco hay cruces con prioridad entre el tráfico de IA de distintas calles.
-- Desfase entre los 3 peatones de `ruta-01` — hoy cruzan sincronizados (ver arriba).
+- Cruces con prioridad entre el tráfico de IA de distintas calles (solo hay cesión de paso a
+  peatones, ver arriba).
 - Colisión física entre vehículos de IA entre sí, o entre IA y peatones — hoy solo hay colisión
   jugador↔lo-demás (edificios, vehículos de IA, peatones), ver `core/collision.ts`.
 - Verificación del checkout de Stripe contra la API real (hoy solo probado con un fake HTTP

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { createPedestrianState, isPedestrianInRoadway, pedestrianPose, stepPedestrian } from './pedestrian-ai';
+import {
+  advancePedestrian,
+  createPedestrianState,
+  isPedestrianInRoadway,
+  pedestrianPhaseOffsetS,
+  pedestrianPose,
+  stepPedestrian,
+} from './pedestrian-ai';
 
 describe('isPedestrianInRoadway', () => {
   it('is true while within the road half-width of the crossing axis', () => {
@@ -43,6 +50,49 @@ describe('stepPedestrian', () => {
     expect(afterWait.waitingS).toBe(0);
     const afterWalk = stepPedestrian(afterWait, 5, 1);
     expect(afterWalk.lateralOffsetM).toBeCloseTo(3.8, 6); // 5 - 1.2*1
+  });
+});
+
+describe('pedestrianPhaseOffsetS', () => {
+  it('is zero for the first pedestrian (no desync needed)', () => {
+    expect(pedestrianPhaseOffsetS(0)).toBe(0);
+  });
+
+  it('grows deterministically with the pedestrian index', () => {
+    expect(pedestrianPhaseOffsetS(1)).toBeGreaterThan(0);
+    expect(pedestrianPhaseOffsetS(2)).toBeGreaterThan(pedestrianPhaseOffsetS(1));
+  });
+});
+
+describe('advancePedestrian', () => {
+  it('is a no-op for a zero offset', () => {
+    const state = createPedestrianState(-5);
+    const advanced = advancePedestrian(state, 5, 0);
+    expect(advanced).toEqual(state);
+  });
+
+  it('matches a single stepPedestrian call within one walking phase', () => {
+    const state = createPedestrianState(-5);
+    const advanced = advancePedestrian(state, 5, 3);
+    const expected = stepPedestrian(state, 5, 3);
+    expect(advanced.lateralOffsetM).toBeCloseTo(expected.lateralOffsetM, 6);
+    expect(advanced.direction).toBe(expected.direction);
+  });
+
+  it('correctly resolves a wait<->walk transition inside the offset window', () => {
+    // Alcanza el lado lejano (+5) a los 10/1.2 = 8.33s, luego espera 4s (hasta
+    // 12.33s). Un desfase de 10s cae a mitad de esa espera: debe seguir
+    // parado en +5, no haber "saltado" la transición espera<->cruce.
+    const state = createPedestrianState(-5);
+    const advanced = advancePedestrian(state, 5, 10);
+    expect(advanced.lateralOffsetM).toBe(5);
+    expect(advanced.waitingS).toBeGreaterThan(0);
+  });
+
+  it('desynchronizes two pedestrians offset from each other', () => {
+    const stateA = advancePedestrian(createPedestrianState(-5), 5, pedestrianPhaseOffsetS(0));
+    const stateB = advancePedestrian(createPedestrianState(-5), 5, pedestrianPhaseOffsetS(1));
+    expect(stateA).not.toEqual(stateB);
   });
 });
 
