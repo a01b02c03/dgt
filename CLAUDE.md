@@ -228,9 +228,15 @@ arriba), sin nada Pro que gatear todavía.
   peatones, ver arriba; tampoco hay tráfico de IA en calles transversales todavía).
 - Verificación del checkout de Stripe contra la API real (hoy solo probado con un fake HTTP
   inyectado en los tests del backend).
-- Defecto cosmético menor: triangulación del techo (roof cap) rota en edificios con huella
-  compleja/muchos puntos (p. ej. `osm-120022089`), por posible auto-intersección del polígono OSM.
-  No afecta a la cámara de conducción (no se ve el techo desde ahí); baja prioridad salvo que se
-  añada una vista aérea o mapa.
 - Rutas o circulación libre de la versión Pro — el gate de licencia ya existe (ver arriba), pero
   no hay ningún contenido Pro que gatear todavía.
+
+**Investigado y descartado**: el defecto cosmético de triangulación del techo (roof cap) que este
+documento reportaba antes en edificios de huella compleja (p. ej. `osm-120022089`, por sospecha de
+auto-intersección del polígono OSM) no se reproduce hoy — verificado dos veces: (1) `earcut` +
+`deviation()` sobre los 326 edificios de `ruta-01` da desviación ~0 y el número de triángulos
+esperado (`n-2`) en los 326, ninguno sospechoso; (2) inspección visual aislada de `osm-120022089`
+en el navegador (cámara cenital temporal) muestra un techo completo, sin huecos. Probablemente ya
+lo arregló de rebote el commit `14be366` (backface culling con `DOUBLESIDE` en `building-mesh.ts`,
+ver más arriba) — lo que se veía como "techo roto" eran huecos de pared trasera visibles desde
+ciertos ángulos, no un fallo real de triangulación del cap.
