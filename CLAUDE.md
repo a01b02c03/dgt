@@ -120,9 +120,15 @@ vehículos la que le cede el paso, ver `isPedestrianInRoadway` arriba. Simplific
 3 peatones de `ruta-01` arrancan en el mismo estado (sin desfase entre ellos, a diferencia de los
 semáforos que sí tienen `trafficLightPhaseOffsetS`), así que hoy cruzan sincronizados.
 
-Ningún vehículo (jugador ni IA) cede el paso a peatones todavía, ni hay colisión física
-jugador↔vehículo de IA ni jugador↔peatón (a diferencia de jugador↔edificio en `core/collision.ts`)
-— un jugador descuidado puede atravesar visualmente un coche de IA o un peatón, gaps conocidos.
+La IA de vehículos cede el paso a peatones (ver arriba); el jugador no tiene nada que le obligue a
+hacerlo. Colisión física del jugador con vehículos de IA y con peatones (`core/collision.ts`,
+`findCollidingRectangle`/`findCollidingPoint`): bloquea el movimiento igual que con un edificio.
+Los vehículos usan solape de rectángulos orientados (`rectanglesOverlap`, SAT) en vez de solo
+comprobar si una esquina cae dentro del otro — necesario para no perderse un cruce en T donde
+ninguna esquina de ninguno de los dos vehículos cae dentro del otro pero sí se solapan. Los
+peatones se tratan como un punto (su posición) dentro del rectángulo del jugador, sin footprint
+propio (son un cilindro pequeño, suficiente para este primer corte). No hay colisión física entre
+vehículos de IA entre sí, ni entre IA y peatones — solo jugador↔lo-demás.
 
 ### Pipeline de construcción de una ruta (decidido, no automatizado todavía)
 
@@ -167,10 +173,11 @@ despliegue en Freehostia (PHP 8.4 + MySQL 8) y el contrato de los 5 endpoints.
 **Ya construido** (todo en `master`, ver `git log` para el detalle commit a commit): geometría real
 de `ruta-01` + mallas de calle/edificios (`src/scene/road-mesh.ts`, `building-mesh.ts`), vehículo
 con controlador **cinemático** (no motor de físicas — `src/scene/vehicle-controller.ts`) e input de
-teclado (`keyboard-input.ts`), colisión bloqueante con edificios (`core/collision.ts`), detección de
-salida de calzada no bloqueante (`core/road-bounds.ts`), señalización real, maniobras de semáforo,
-cambio de sentido y aparcamiento con evaluación pass/fail, un primer HUD (velocímetro + checklist
-de maniobras, `src/ui/hud.ts` + `core/hud.ts`), una pantalla final de resultado del examen
+teclado (`keyboard-input.ts`), colisión bloqueante con edificios, vehículos de IA y peatones
+(`core/collision.ts`), detección de salida de calzada no bloqueante (`core/road-bounds.ts`),
+señalización real, maniobras de semáforo, cambio de sentido y aparcamiento con evaluación pass/fail,
+un primer HUD (velocímetro + checklist de maniobras, `src/ui/hud.ts` + `core/hud.ts`), una pantalla
+final de resultado del examen
 (`core/exam-result.ts` + `src/ui/exam-result-screen.ts`): veredicto agregado apto/no apto —
 `'fail'` en cuanto cualquier maniobra evaluada falla (como una falta eliminatoria real, no hace
 falta llegar al final), `'pass'` solo al llegar al final de la ruta (radio de 10m al último
@@ -192,8 +199,8 @@ gatear todavía.
 - Ceder el paso del jugador: nada le obliga a parar ante un peatón (solo la IA de vehículos lo
   hace); tampoco hay cruces con prioridad entre el tráfico de IA de distintas calles.
 - Desfase entre los 3 peatones de `ruta-01` — hoy cruzan sincronizados (ver arriba).
-- Colisión física jugador↔vehículo de IA y jugador↔peatón (hoy solo hay jugador↔edificio, ver
-  `core/collision.ts`).
+- Colisión física entre vehículos de IA entre sí, o entre IA y peatones — hoy solo hay colisión
+  jugador↔lo-demás (edificios, vehículos de IA, peatones), ver `core/collision.ts`.
 - Verificación del checkout de Stripe contra la API real (hoy solo probado con un fake HTTP
   inyectado en los tests del backend).
 - Defecto cosmético menor: triangulación del techo (roof cap) rota en edificios con huella

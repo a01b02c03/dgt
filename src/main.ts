@@ -1,5 +1,5 @@
 import { Color3, Engine, FollowCamera, HemisphericLight, MeshBuilder, Scene, StandardMaterial, Vector3 } from '@babylonjs/core';
-import { findCollidingBuilding, vehicleCorners } from './core/collision';
+import { findCollidingBuilding, findCollidingPoint, findCollidingRectangle, vehicleCorners } from './core/collision';
 import { examOutcome, hasReachedFinish } from './core/exam-result';
 import { toLocalMeters } from './core/geo';
 import { currentSpeedLimitKmh, maneuverChecklistLabel, speedMsToKmh } from './core/hud';
@@ -269,16 +269,37 @@ function createScene(): Scene {
     elapsedSimS += dtSeconds;
     const candidate = stepVehicle(vehicleState, getInput(), dtSeconds);
 
-    // Colisión con edificios: a diferencia de los límites de calzada, un coche
-    // real no puede atravesar una pared, así que aquí sí bloqueamos el
-    // movimiento (se cancela el desplazamiento y se detiene, como al chocar).
+    // Colisión: a diferencia de los límites de calzada, un coche real no
+    // puede atravesar una pared, otro coche o un peatón, así que aquí sí
+    // bloqueamos el movimiento (se cancela el desplazamiento y se detiene,
+    // como al chocar). Edificios: esquina del jugador dentro del polígono
+    // (isPointInPolygon). Vehículos de IA: solape de rectángulos orientados
+    // (rectanglesOverlap/SAT, no solo "esquina dentro" — necesario para no
+    // perderse un cruce en T). Peatones: su posición (un punto) dentro del
+    // rectángulo del jugador (findCollidingPoint). Usa las posiciones del
+    // frame anterior de la IA (se actualizan más abajo), mismo patrón de
+    // snapshot que el resto de la IA de tráfico.
     const corners = vehicleCorners(candidate.x, candidate.z, candidate.headingRad, VEHICLE_LENGTH_M, VEHICLE_WIDTH_M);
     const collision = findCollidingBuilding(corners, buildingShapes);
-    if (Boolean(collision) !== wasColliding) {
-      console.log(collision ? `Colisión con edificio ${collision.id}` : 'Sin colisión');
-      wasColliding = Boolean(collision);
+    const otherVehicleCorners = [...aiVehicles, ...oncomingVehicles].map((v) =>
+      vehicleCorners(v.mesh.position.x, v.mesh.position.z, v.mesh.rotation.y, VEHICLE_LENGTH_M, VEHICLE_WIDTH_M),
+    );
+    const collidingVehicleIndex = findCollidingRectangle(corners, otherVehicleCorners);
+    const pedestrianPoints = pedestrians.map((p) => ({ x: p.mesh.position.x, z: p.mesh.position.z }));
+    const collidingPedestrianIndex = findCollidingPoint(corners, pedestrianPoints);
+    const anyCollision = Boolean(collision) || collidingVehicleIndex !== null || collidingPedestrianIndex !== null;
+    if (anyCollision !== wasColliding) {
+      const reason = collision
+        ? `edificio ${collision.id}`
+        : collidingVehicleIndex !== null
+          ? 'vehículo de IA'
+          : collidingPedestrianIndex !== null
+            ? 'peatón'
+            : null;
+      console.log(reason ? `Colisión con ${reason}` : 'Sin colisión');
+      wasColliding = anyCollision;
     }
-    vehicleState = collision
+    vehicleState = anyCollision
       ? { ...candidate, x: vehicleState.x, z: vehicleState.z, speedMs: 0 }
       : candidate;
 
@@ -352,7 +373,7 @@ function createScene(): Scene {
       uTurnEvalState,
       { headingRad: vehicleState.headingRad },
       bounds.onRoad,
-      Boolean(collision),
+      anyCollision,
     );
     maneuverProgress = uTurnResult.progress;
     uTurnEvalState = uTurnResult.evalState;
@@ -363,7 +384,7 @@ function createScene(): Scene {
       routePoints,
       { x: vehicleState.x, z: vehicleState.z, headingRad: vehicleState.headingRad, speedMs: vehicleState.speedMs },
       bounds.onRoad,
-      Boolean(collision),
+      anyCollision,
     );
     maneuverProgress = parallelParkResult.progress;
     parallelParkEvalState = parallelParkResult.evalState;

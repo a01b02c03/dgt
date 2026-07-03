@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { findCollidingBuilding, isPointInPolygon, vehicleCorners } from './collision';
+import {
+  findCollidingBuilding,
+  findCollidingPoint,
+  findCollidingRectangle,
+  isPointInPolygon,
+  rectanglesOverlap,
+  vehicleCorners,
+} from './collision';
 
 describe('isPointInPolygon', () => {
   const square = [
@@ -59,5 +66,58 @@ describe('vehicleCorners', () => {
     expect(xs[3]).toBeCloseTo(2, 6);
     expect(zs[0]).toBeCloseTo(-1, 6);
     expect(zs[3]).toBeCloseTo(1, 6);
+  });
+});
+
+describe('rectanglesOverlap', () => {
+  it('is true for two clearly overlapping axis-aligned rectangles', () => {
+    const a = [{ x: 0, z: 0 }, { x: 4, z: 0 }, { x: 4, z: 4 }, { x: 0, z: 4 }];
+    const b = [{ x: 2, z: 2 }, { x: 6, z: 2 }, { x: 6, z: 6 }, { x: 2, z: 6 }];
+    expect(rectanglesOverlap(a, b)).toBe(true);
+  });
+
+  it('is false for two clearly separate rectangles', () => {
+    const a = [{ x: 0, z: 0 }, { x: 4, z: 0 }, { x: 4, z: 4 }, { x: 0, z: 4 }];
+    const b = [{ x: 100, z: 100 }, { x: 104, z: 100 }, { x: 104, z: 104 }, { x: 100, z: 104 }];
+    expect(rectanglesOverlap(a, b)).toBe(false);
+  });
+
+  it('detects a T-bone crossing where neither rectangle has a corner inside the other', () => {
+    // A: larga y fina, horizontal (10 x 1). B: larga y fina, vertical (1 x 10).
+    // Se cruzan en el centro en forma de "+", pero ninguna esquina de una cae
+    // dentro de la otra — el caso que un test de "esquina dentro del polígono"
+    // (isPointInPolygon con un solo vértice) se perdería.
+    const horizontal = [{ x: -5, z: -0.5 }, { x: 5, z: -0.5 }, { x: 5, z: 0.5 }, { x: -5, z: 0.5 }];
+    const vertical = [{ x: -0.5, z: -5 }, { x: -0.5, z: 5 }, { x: 0.5, z: 5 }, { x: 0.5, z: -5 }];
+    expect(rectanglesOverlap(horizontal, vertical)).toBe(true);
+  });
+});
+
+describe('findCollidingRectangle', () => {
+  const player = [{ x: 0, z: 0 }, { x: 2, z: 0 }, { x: 2, z: 2 }, { x: 0, z: 2 }];
+
+  it('returns the index of the first overlapping rectangle', () => {
+    const others = [
+      [{ x: 100, z: 100 }, { x: 102, z: 100 }, { x: 102, z: 102 }, { x: 100, z: 102 }], // lejos
+      [{ x: 1, z: 1 }, { x: 3, z: 1 }, { x: 3, z: 3 }, { x: 1, z: 3 }], // solapa
+    ];
+    expect(findCollidingRectangle(player, others)).toBe(1);
+  });
+
+  it('returns null when nothing overlaps', () => {
+    const others = [[{ x: 100, z: 100 }, { x: 102, z: 100 }, { x: 102, z: 102 }, { x: 100, z: 102 }]];
+    expect(findCollidingRectangle(player, others)).toBeNull();
+  });
+});
+
+describe('findCollidingPoint', () => {
+  const box = [{ x: 0, z: 0 }, { x: 4, z: 0 }, { x: 4, z: 4 }, { x: 0, z: 4 }];
+
+  it('returns the index of the first point inside the rectangle', () => {
+    expect(findCollidingPoint(box, [{ x: 100, z: 100 }, { x: 2, z: 2 }])).toBe(1);
+  });
+
+  it('returns null when no point is inside', () => {
+    expect(findCollidingPoint(box, [{ x: 100, z: 100 }])).toBeNull();
   });
 });

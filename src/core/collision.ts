@@ -39,6 +39,63 @@ export function findCollidingBuilding(points: LocalPoint[], buildings: Collision
 }
 
 /**
+ * Proyecta `corners` sobre el eje `(axisX, axisZ)` y devuelve [mínimo, máximo].
+ */
+function projectOntoAxis(corners: LocalPoint[], axisX: number, axisZ: number): [number, number] {
+  const projections = corners.map((p) => p.x * axisX + p.z * axisZ);
+  return [Math.min(...projections), Math.max(...projections)];
+}
+
+/** true si alguno de los ejes normales a los lados de `corners` separa completamente a `corners` de `other`. */
+function hasSeparatingAxis(corners: LocalPoint[], other: LocalPoint[]): boolean {
+  for (let i = 0; i < corners.length; i++) {
+    const p1 = corners[i];
+    const p2 = corners[(i + 1) % corners.length];
+    const axisX = -(p2.z - p1.z);
+    const axisZ = p2.x - p1.x;
+
+    const [minA, maxA] = projectOntoAxis(corners, axisX, axisZ);
+    const [minB, maxB] = projectOntoAxis(other, axisX, axisZ);
+    if (maxA < minB || maxB < minA) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Solape de dos rectángulos orientados arbitrariamente (SAT: teorema del eje
+ * separador). A diferencia de comprobar solo si una esquina de uno cae dentro
+ * del otro (como `isPointInPolygon` con un vértice), esto no se pierde un
+ * cruce en T donde ninguna esquina de ninguno de los dos rectángulos cae
+ * dentro del otro pero sí se solapan — el caso típico de dos vehículos
+ * cruzándose en un ángulo.
+ */
+export function rectanglesOverlap(cornersA: LocalPoint[], cornersB: LocalPoint[]): boolean {
+  return !hasSeparatingAxis(cornersA, cornersB) && !hasSeparatingAxis(cornersB, cornersA);
+}
+
+/** Índice del primer rectángulo de `others` que se solapa con `corners`, o null. */
+export function findCollidingRectangle(corners: LocalPoint[], others: LocalPoint[][]): number | null {
+  for (let i = 0; i < others.length; i++) {
+    if (rectanglesOverlap(corners, others[i])) {
+      return i;
+    }
+  }
+  return null;
+}
+
+/** Índice del primer punto de `points` que cae dentro del rectángulo `corners`, o null. */
+export function findCollidingPoint(corners: LocalPoint[], points: LocalPoint[]): number | null {
+  for (let i = 0; i < points.length; i++) {
+    if (isPointInPolygon(points[i], corners)) {
+      return i;
+    }
+  }
+  return null;
+}
+
+/**
  * Esquinas del rectángulo del vehículo en coordenadas de mundo, a partir del
  * centro, el rumbo (mismo convenio que headingDeg: 0=norte/+z, 90=este/+x,
  * sentido horario visto desde arriba) y sus dimensiones.
