@@ -53,6 +53,24 @@ import type { RouteDefinition } from '../../core/route-types';
  * wp1 y wp2 no tienen maniobra: wp1 cae dentro del mismo cruce de Gran Via que
  * wp0 (10 elementos a <25m, mismas coordenadas de cruce), y wp2 no tiene ningún
  * elemento semafórico activo a <25m.
+ *
+ * Señal `pedestrian-crossing` tomada del inventario oficial de pasos de peatones
+ * del Ajuntament de Barcelona (dataset "infraestructures-inventari-pas-vianants",
+ * filtrado a Data_Baixa vacío = activo). El dataset mezcla pasos de peatones
+ * reales (Codi_Pas `255128000_Taco` = "Pas de tacs", `255000000_Pastilla` =
+ * "Pas de pastilles", ver dataset enlazado "infraestructures-tipologia-pas-vianants")
+ * con pasos de bicicleta (`000000255_Ciclista`, descartados por no ser de
+ * peatones):
+ * - id 10775653 (Pas de tacs, a 10.3m de wp5): confirmado sobre Carrer de la
+ *   Marina y no Avinguda Diagonal cruzando su coordenada contra la geometría
+ *   real de OpenStreetMap (Overpass, distancia punto-segmento) — 2.6m del
+ *   `way["highway"="primary"]` de Marina, 14.5m del footway más cercano de
+ *   Diagonal. headingDeg es el rumbo de la ruta en wp5 (misma convención que el
+ *   resto de señales de este archivo), no la orientación real del paso —ese
+ *   dato tampoco está en el CSV.
+ * Hay más candidatos "Pas de tacs" cerca de otros waypoints (0, 1, 3, 4 y 6,
+ * <16m del eje) sin verificar todavía contra OSM por límite de peticiones del
+ * servidor Overpass público durante esta sesión — pendientes, no descartados.
  */
 export const ruta01: RouteDefinition = {
   id: 'ruta-01',
@@ -79,6 +97,11 @@ export const ruta01: RouteDefinition = {
       type: 'no-entry',
       position: { lat: 41.4009138, lon: 2.1790367 },
       headingDeg: 322.0,
+    },
+    {
+      type: 'pedestrian-crossing',
+      position: { lat: 41.4014622, lon: 2.1783051 },
+      headingDeg: 318.8,
     },
   ],
   maneuvers: [
