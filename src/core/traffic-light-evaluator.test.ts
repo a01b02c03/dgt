@@ -11,7 +11,7 @@ import {
 // Ruta sintética: un único waypoint en el origen, heading 0° (norte, +z).
 // DEFAULT_TRAFFIC_LIGHT_CYCLE: green=6, amber=3, red=8 -> offset(0) = 0.
 // Por tanto en t=0 la fase es verde, t=6 ámbar, t=9 rojo.
-const waypoints: Waypoint[] = [{ position: { lat: 0, lon: 0 }, headingDeg: 0, speedLimitKmh: 50, twoWay: true }];
+const waypoints: Waypoint[] = [{ position: { lat: 0, lon: 0 }, headingDeg: 0, speedLimitKmh: 50, twoWay: true, ownDirectionLanes: 1 }];
 const waypointPositions = [{ x: 0, z: 0 }];
 
 function trafficLightManeuver(): Maneuver {

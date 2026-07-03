@@ -6,8 +6,11 @@ import { currentSpeedLimitKmh, maneuverChecklistLabel, speedMsToKmh } from './co
 import {
   buildOncomingRoute,
   LANE_OFFSET_M,
+  laneIndexFromLateralOffsetM,
+  laneOffsetM,
   mirroredArcLengthOfWaypoint,
   offsetPoseToLane,
+  ownDirectionLaneCount,
 } from './core/lanes';
 import { licenseStatusView } from './core/license';
 import { activateLicense, fetchSessionStatus, requestCheckout, validateLicense } from './license/api';
@@ -32,6 +35,7 @@ import {
   buildArcLengthTable,
   createAiVehicleState,
   estimateArcLength,
+  leadVehicleArcM,
   nextStopArcLengthM,
   poseAtArcLength,
   stepAiVehicle,
@@ -194,22 +198,35 @@ function createScene(): Scene {
   buildSignMarkers(freeRoute, origin, scene);
 
   // Tráfico ambiente: vehículos de IA que siguen el mismo trazado que el
-  // jugador, en su propio carril (mitad derecha de la calzada, ver
-  // core/lanes.ts), respetan los semáforos en rojo y guardan distancia con el
-  // vehículo inmediatamente delante (jugador u otro coche de IA) — ver
-  // core/traffic-ai.ts. Offsets iniciales arbitrarios, no ligados a ningún
-  // dato real; se descartan los que caen más allá del final de la ruta.
+  // jugador, en su propio carril, respetan los semáforos en rojo y guardan
+  // distancia con el vehículo inmediatamente delante en ESE carril (jugador u
+  // otro coche de IA) — ver core/traffic-ai.ts. Cada vehículo recibe un
+  // carril fijo al aparecer (reparto por turnos entre los carriles del propio
+  // sentido en su punto de arranque, ver core/lanes.ts) y lo mantiene toda la
+  // ruta: no hay modelo de cambio de carril de la IA todavía (esa es
+  // precisamente la maniobra `lane-change` sin criterio, ver CLAUDE.md), así
+  // que si el tramo siguiente tiene menos carriles el vehículo se recorta al
+  // último disponible (laneOffsetM) en vez de fusionarse de forma realista.
+  // Offsets iniciales arbitrarios, no ligados a ningún dato real; se
+  // descartan los que caen más allá del final de la ruta. Ninguna ruta real
+  // tiene hoy más de un carril por sentido (ruta-01: `ownDirectionLanes: 1`
+  // en todos sus waypoints, ver CLAUDE.md), así que este reparto siempre
+  // asigna el carril 0 y el resultado es idéntico al de un único carril.
   const arcLengthTable = buildArcLengthTable(routePoints);
   const routeLengthM = arcLengthTable[arcLengthTable.length - 1];
   const AI_VEHICLE_INITIAL_OFFSETS_M = [60, 140];
-  const aiVehicles = AI_VEHICLE_INITIAL_OFFSETS_M.filter((offsetM) => offsetM < routeLengthM).map((offsetM) => {
+  const aiVehicles = AI_VEHICLE_INITIAL_OFFSETS_M.filter((offsetM) => offsetM < routeLengthM).map((offsetM, index) => {
     const { mesh, bodyMaterial } = buildVehicleMesh(scene);
     bodyMaterial.diffuseColor = AI_VEHICLE_COLOR;
-    const pose = offsetPoseToLane(poseAtArcLength(routePoints, arcLengthTable, offsetM), LANE_OFFSET_M);
+    const centerPose = poseAtArcLength(routePoints, arcLengthTable, offsetM);
+    const spawnSegmentIndex = queryRoadBounds(routePoints, ROAD_WIDTH_M, centerPose).segmentIndex;
+    const laneCount = ownDirectionLaneCount(freeRoute.waypoints, spawnSegmentIndex);
+    const laneIndex = index % laneCount;
+    const pose = offsetPoseToLane(centerPose, laneOffsetM(laneIndex, laneCount));
     mesh.position.x = pose.x;
     mesh.position.z = pose.z;
     mesh.rotation.y = pose.headingRad;
-    return { mesh, state: createAiVehicleState(offsetM) };
+    return { mesh, state: createAiVehicleState(offsetM), laneIndex };
   });
 
   // Tráfico de IA en sentido contrario: solo existe en el tramo de doble
@@ -501,12 +518,22 @@ function createScene(): Scene {
       .map((maneuver) => arcLengthTable[maneuver.atWaypointIndex]);
     const stopPointArcLengths = [...redLightArcLengths, ...blockingPedestrianForwardArcs];
     const playerArcM = estimateArcLength(routePoints, arcLengthTable, { x: vehicleState.x, z: vehicleState.z });
+    // El jugador no tiene un carril fijo (se mueve libre en 2D, ver
+    // vehicle-controller.ts), así que su carril "actual" se deriva de su
+    // desplazamiento lateral respecto al eje — solo importa para saber si
+    // bloquea a un vehículo de IA que le siga por detrás en ese carril.
+    const playerLaneCount = ownDirectionLaneCount(freeRoute.waypoints, bounds.segmentIndex);
+    const playerLaneIndex = laneIndexFromLateralOffsetM(bounds.lateralOffsetM, playerLaneCount);
     const aiArcsBeforeStep = aiVehicles.map((vehicle) => vehicle.state.distanceAlongRouteM);
 
     aiVehicles.forEach((vehicle, index) => {
-      const otherArcs = [playerArcM, ...aiArcsBeforeStep.filter((_, otherIndex) => otherIndex !== index)];
-      const arcsAhead = otherArcs.filter((arc) => arc > vehicle.state.distanceAlongRouteM);
-      const leadArcM = arcsAhead.length > 0 ? Math.min(...arcsAhead) : null;
+      const others = [
+        { arcM: playerArcM, laneIndex: playerLaneIndex },
+        ...aiVehicles
+          .map((other, otherIndex) => ({ arcM: aiArcsBeforeStep[otherIndex], laneIndex: other.laneIndex }))
+          .filter((_, otherIndex) => otherIndex !== index),
+      ];
+      const leadArcM = leadVehicleArcM(vehicle.laneIndex, vehicle.state.distanceAlongRouteM, others);
 
       const aiBounds = queryRoadBounds(routePoints, ROAD_WIDTH_M, {
         x: vehicle.mesh.position.x,
@@ -514,6 +541,7 @@ function createScene(): Scene {
       });
       const speedLimitMs = currentSpeedLimitKmh(freeRoute.waypoints, aiBounds.segmentIndex) / 3.6;
       const stopLineArcM = nextStopArcLengthM(vehicle.state.distanceAlongRouteM, stopPointArcLengths, leadArcM);
+      const laneCount = ownDirectionLaneCount(freeRoute.waypoints, aiBounds.segmentIndex);
 
       // Colisión física con otro vehículo de IA (propio sentido u oncoming) o
       // un peatón: la distancia de seguimiento (leadArcM) ya evita casi
@@ -528,7 +556,7 @@ function createScene(): Scene {
       const candidateState = stepAiVehicle(previousState, { speedLimitMs, stopLineArcM }, dtSeconds);
       const candidatePose = offsetPoseToLane(
         poseAtArcLength(routePoints, arcLengthTable, candidateState.distanceAlongRouteM),
-        LANE_OFFSET_M,
+        laneOffsetM(vehicle.laneIndex, laneCount),
       );
       const candidateCorners = vehicleCorners(candidatePose.x, candidatePose.z, candidatePose.headingRad, VEHICLE_LENGTH_M, VEHICLE_WIDTH_M);
       const othersCorners = otherVehicleCorners.filter((_, otherIndex) => otherIndex !== index);
@@ -541,7 +569,10 @@ function createScene(): Scene {
           : candidateState;
       const pose =
         collidesWithVehicle || collidesWithPedestrian
-          ? offsetPoseToLane(poseAtArcLength(routePoints, arcLengthTable, vehicle.state.distanceAlongRouteM), LANE_OFFSET_M)
+          ? offsetPoseToLane(
+              poseAtArcLength(routePoints, arcLengthTable, vehicle.state.distanceAlongRouteM),
+              laneOffsetM(vehicle.laneIndex, laneCount),
+            )
           : candidatePose;
       vehicle.mesh.position.x = pose.x;
       vehicle.mesh.position.z = pose.z;

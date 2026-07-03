@@ -18,9 +18,9 @@ describe('speedMsToKmh', () => {
 
 describe('currentSpeedLimitKmh', () => {
   const waypoints: Waypoint[] = [
-    { position: { lat: 0, lon: 0 }, headingDeg: 0, speedLimitKmh: 50, twoWay: true },
-    { position: { lat: 0, lon: 0 }, headingDeg: 0, speedLimitKmh: 50, twoWay: true },
-    { position: { lat: 0, lon: 0 }, headingDeg: 0, speedLimitKmh: 30, twoWay: true },
+    { position: { lat: 0, lon: 0 }, headingDeg: 0, speedLimitKmh: 50, twoWay: true, ownDirectionLanes: 1 },
+    { position: { lat: 0, lon: 0 }, headingDeg: 0, speedLimitKmh: 50, twoWay: true, ownDirectionLanes: 1 },
+    { position: { lat: 0, lon: 0 }, headingDeg: 0, speedLimitKmh: 30, twoWay: true, ownDirectionLanes: 1 },
   ];
 
   it('reads the limit of the given segment index, not segmentIndex + 1', () => {

@@ -5,7 +5,7 @@ import type { Maneuver, Waypoint } from './route-types';
 
 // Ruta sintética: un único waypoint en el origen, heading 0° (norte, +z),
 // mismo convenio que traffic-light-evaluator.test.ts.
-const waypoints: Waypoint[] = [{ position: { lat: 0, lon: 0 }, headingDeg: 0, speedLimitKmh: 50, twoWay: true }];
+const waypoints: Waypoint[] = [{ position: { lat: 0, lon: 0 }, headingDeg: 0, speedLimitKmh: 50, twoWay: true, ownDirectionLanes: 1 }];
 const waypointPositions = [{ x: 0, z: 0 }];
 
 function giveWayManeuver(): Maneuver {

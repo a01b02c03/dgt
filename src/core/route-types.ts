@@ -15,6 +15,13 @@ export interface Waypoint {
    * sentido contrario).
    */
   twoWay: boolean;
+  /**
+   * Número de carriles del propio sentido de circulación en el tramo que
+   * empieza en este waypoint (misma convención "aplica desde este waypoint en
+   * adelante" que speedLimitKmh/twoWay). No afecta al sentido contrario, que
+   * siempre se modela con un único carril — ver core/lanes.ts.
+   */
+  ownDirectionLanes: number;
 }
 
 export type SignType =

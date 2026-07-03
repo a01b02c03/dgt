@@ -5,9 +5,16 @@ import type { Waypoint } from './route-types';
 /**
  * Offset lateral del centro de cada carril respecto al eje de la calzada,
  * la mitad del ancho total (ver ROAD_WIDTH_M en road-bounds.ts): con 6m de
- * calzada, cada sentido ocupa su mitad (3m), centrado en ±1.5m.
+ * calzada, cada sentido ocupa su mitad (3m), centrado en ±1.5m. Caso
+ * particular de `laneOffsetM(0, 1)` de abajo — se mantiene como constante
+ * aparte porque el sentido contrario siempre se modela con un único carril
+ * (ver `oncomingVehicles` en main.ts), así que no necesita pasar por el
+ * modelo genérico de varios carriles.
  */
 export const LANE_OFFSET_M = 1.5;
+
+/** Ancho de un carril, en metros — igual al ancho por sentido de ROAD_WIDTH_M/2 cuando hay un único carril. */
+export const LANE_WIDTH_M = 3;
 
 /**
  * Si el tramo que empieza en `waypoints[segmentIndex]` es de doble sentido.
@@ -16,6 +23,48 @@ export const LANE_OFFSET_M = 1.5;
  */
 export function isTwoWaySegment(waypoints: Waypoint[], segmentIndex: number): boolean {
   return (waypoints[segmentIndex] ?? waypoints[0]).twoWay;
+}
+
+/**
+ * Número de carriles del propio sentido en el tramo que empieza en
+ * `waypoints[segmentIndex]`. Misma convención "aplica desde este waypoint en
+ * adelante" que isTwoWaySegment/currentSpeedLimitKmh. Modelo genérico, listo
+ * para una ruta futura con varios carriles en el mismo sentido — ninguna ruta
+ * real lo usa hoy (ver CLAUDE.md): ruta-01 tiene `ownDirectionLanes: 1` en
+ * todos sus waypoints, así que este modelo se comporta como el carril único
+ * de siempre.
+ */
+export function ownDirectionLaneCount(waypoints: Waypoint[], segmentIndex: number): number {
+  return (waypoints[segmentIndex] ?? waypoints[0]).ownDirectionLanes;
+}
+
+/** Recorta un índice de carril al rango disponible [0, laneCount - 1] — p. ej. si el tramo actual tiene menos carriles que donde arrancó el vehículo. */
+export function clampLaneIndex(laneIndex: number, laneCount: number): number {
+  return Math.min(Math.max(laneIndex, 0), laneCount - 1);
+}
+
+/**
+ * Offset lateral del centro del carril `laneIndex` (0 = el más cercano al eje
+ * de la calzada, creciente hacia la acera) dentro de un bloque de `laneCount`
+ * carriles del propio sentido, cada uno de LANE_WIDTH_M. Recorta laneIndex al
+ * rango disponible en vez de lanzar, para que un vehículo con un carril
+ * asignado en un tramo más ancho no quede fuera de calzada si el tramo
+ * siguiente tiene menos carriles (no hay modelo de fusión de carriles, ver
+ * traffic-ai.ts).
+ */
+export function laneOffsetM(laneIndex: number, laneCount: number): number {
+  return LANE_WIDTH_M * (clampLaneIndex(laneIndex, laneCount) + 0.5);
+}
+
+/**
+ * Carril más cercano a un desplazamiento lateral dado (mismo convenio que
+ * RoadBoundsQuery.lateralOffsetM: positivo = a la derecha del sentido de
+ * circulación, o sea, el lado del propio sentido). Usado para saber en qué
+ * carril está el jugador (que se mueve libre en 2D, no por carril fijo como
+ * la IA) a efectos de si bloquea a un vehículo de IA que le sigue por detrás.
+ */
+export function laneIndexFromLateralOffsetM(lateralOffsetM: number, laneCount: number): number {
+  return clampLaneIndex(Math.floor(lateralOffsetM / LANE_WIDTH_M), laneCount);
 }
 
 export interface OncomingRoute {

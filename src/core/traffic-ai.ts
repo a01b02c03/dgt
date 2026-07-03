@@ -134,6 +134,26 @@ export function nextStopArcLengthM(
 }
 
 /**
+ * Distancia acumulada del vehículo más cercano por delante de `currentArcM`
+ * que comparte carril con él (`laneIndex`) — con varios carriles en el mismo
+ * sentido, un vehículo solo guarda distancia con el tráfico de su propio
+ * carril, no con todo el que va por delante en el mismo sentido. `null` si no
+ * hay ninguno. Con un único carril (todas las rutas hoy, ver CLAUDE.md) todos
+ * los `others` comparten `laneIndex`, así que esto se comporta igual que
+ * filtrar solo por `arc > currentArcM`.
+ */
+export function leadVehicleArcM(
+  ownLaneIndex: number,
+  currentArcM: number,
+  others: { arcM: number; laneIndex: number }[],
+): number | null {
+  const arcsAhead = others
+    .filter((other) => other.laneIndex === ownLaneIndex && other.arcM > currentArcM)
+    .map((other) => other.arcM);
+  return arcsAhead.length === 0 ? null : Math.min(...arcsAhead);
+}
+
+/**
  * Avanza un vehículo de IA a lo largo del trazado: no tiene volante, su única
  * decisión es la velocidad. Acelera hacia el límite vigente salvo que haya un
  * punto de parada (`stopLineArcM`) a menos de BRAKING_DISTANCE_M, en cuyo caso

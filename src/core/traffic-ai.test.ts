@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildArcLengthTable,
   estimateArcLength,
+  leadVehicleArcM,
   nextStopArcLengthM,
   poseAtArcLength,
   stepAiVehicle,
@@ -85,6 +86,27 @@ describe('nextStopArcLengthM', () => {
 
   it('returns the red light when it is closer than the lead-vehicle gap', () => {
     expect(nextStopArcLengthM(10, [15], 100, 8)).toBe(15);
+  });
+});
+
+describe('leadVehicleArcM', () => {
+  it('returns null when nobody shares the lane', () => {
+    const others = [{ arcM: 50, laneIndex: 1 }];
+    expect(leadVehicleArcM(0, 10, others)).toBeNull();
+  });
+
+  it('ignores same-lane vehicles already behind', () => {
+    const others = [{ arcM: 5, laneIndex: 0 }];
+    expect(leadVehicleArcM(0, 10, others)).toBeNull();
+  });
+
+  it('returns the nearest same-lane vehicle ahead, not the nearest overall', () => {
+    const others = [
+      { arcM: 15, laneIndex: 1 }, // otro carril, más cerca pero no cuenta
+      { arcM: 40, laneIndex: 0 },
+      { arcM: 25, laneIndex: 0 },
+    ];
+    expect(leadVehicleArcM(0, 10, others)).toBe(25);
   });
 });
 

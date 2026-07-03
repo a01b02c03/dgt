@@ -105,6 +105,12 @@ import type { RouteDefinition } from '../../core/route-types';
  * wp4 más arriba, que marca justo este cambio. No hay tramos de doble sentido
  * más allá de wp3 en esta ruta.
  *
+ * `ownDirectionLanes` es 1 en todos los waypoints: Carrer de la Marina es de
+ * un único carril por sentido en todo su recorrido (mismos `way["highway"]`
+ * de OSM verificados arriba para `twoWay`, ninguno con más de un carril
+ * marcado), así que el modelo de varios carriles de core/lanes.ts no tiene
+ * ningún efecto visible en esta ruta — ver CLAUDE.md.
+ *
  * Maniobras `give-way` (criterio en core/give-way-evaluator.ts): una por cada
  * paso de peatones real verificado arriba, anclada al mismo waypoint que se
  * usó para calcular su headingDeg (wp1, wp5, wp6) — no un waypoint nuevo, el
@@ -119,13 +125,13 @@ export const ruta01: RouteDefinition = {
   city: 'Barcelona',
   isFree: true,
   waypoints: [
-    { position: { lat: 41.3991287, lon: 2.1812288 }, headingDeg: 317.4, speedLimitKmh: 50, twoWay: true },
-    { position: { lat: 41.3992773, lon: 2.1810465 }, headingDeg: 314.9, speedLimitKmh: 50, twoWay: true },
-    { position: { lat: 41.3996031, lon: 2.1806113 }, headingDeg: 315.1, speedLimitKmh: 50, twoWay: true },
-    { position: { lat: 41.4000834, lon: 2.1799739 }, headingDeg: 315.6, speedLimitKmh: 30, twoWay: false },
-    { position: { lat: 41.4008045, lon: 2.179034 }, headingDeg: 322.0, speedLimitKmh: 30, twoWay: false },
-    { position: { lat: 41.4014084, lon: 2.1784059 }, headingDeg: 318.8, speedLimitKmh: 30, twoWay: false },
-    { position: { lat: 41.4018988, lon: 2.1778328 }, headingDeg: 318.8, speedLimitKmh: 30, twoWay: false },
+    { position: { lat: 41.3991287, lon: 2.1812288 }, headingDeg: 317.4, speedLimitKmh: 50, twoWay: true, ownDirectionLanes: 1 },
+    { position: { lat: 41.3992773, lon: 2.1810465 }, headingDeg: 314.9, speedLimitKmh: 50, twoWay: true, ownDirectionLanes: 1 },
+    { position: { lat: 41.3996031, lon: 2.1806113 }, headingDeg: 315.1, speedLimitKmh: 50, twoWay: true, ownDirectionLanes: 1 },
+    { position: { lat: 41.4000834, lon: 2.1799739 }, headingDeg: 315.6, speedLimitKmh: 30, twoWay: false, ownDirectionLanes: 1 },
+    { position: { lat: 41.4008045, lon: 2.179034 }, headingDeg: 322.0, speedLimitKmh: 30, twoWay: false, ownDirectionLanes: 1 },
+    { position: { lat: 41.4014084, lon: 2.1784059 }, headingDeg: 318.8, speedLimitKmh: 30, twoWay: false, ownDirectionLanes: 1 },
+    { position: { lat: 41.4018988, lon: 2.1778328 }, headingDeg: 318.8, speedLimitKmh: 30, twoWay: false, ownDirectionLanes: 1 },
   ],
   signs: [
     {
