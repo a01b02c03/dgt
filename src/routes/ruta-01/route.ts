@@ -54,23 +54,36 @@ import type { RouteDefinition } from '../../core/route-types';
  * wp0 (10 elementos a <25m, mismas coordenadas de cruce), y wp2 no tiene ningún
  * elemento semafórico activo a <25m.
  *
- * Señal `pedestrian-crossing` tomada del inventario oficial de pasos de peatones
+ * Señales `pedestrian-crossing` tomadas del inventario oficial de pasos de peatones
  * del Ajuntament de Barcelona (dataset "infraestructures-inventari-pas-vianants",
  * filtrado a Data_Baixa vacío = activo). El dataset mezcla pasos de peatones
  * reales (Codi_Pas `255128000_Taco` = "Pas de tacs", `255000000_Pastilla` =
  * "Pas de pastilles", ver dataset enlazado "infraestructures-tipologia-pas-vianants")
  * con pasos de bicicleta (`000000255_Ciclista`, descartados por no ser de
- * peatones):
- * - id 10775653 (Pas de tacs, a 10.3m de wp5): confirmado sobre Carrer de la
- *   Marina y no Avinguda Diagonal cruzando su coordenada contra la geometría
- *   real de OpenStreetMap (Overpass, distancia punto-segmento) — 2.6m del
- *   `way["highway"="primary"]` de Marina, 14.5m del footway más cercano de
- *   Diagonal. headingDeg es el rumbo de la ruta en wp5 (misma convención que el
- *   resto de señales de este archivo), no la orientación real del paso —ese
- *   dato tampoco está en el CSV.
- * Hay más candidatos "Pas de tacs" cerca de otros waypoints (0, 1, 3, 4 y 6,
- * <16m del eje) sin verificar todavía contra OSM por límite de peticiones del
- * servidor Overpass público durante esta sesión — pendientes, no descartados.
+ * peatones). Cada candidato "Taco"/"Pastilla" a <30m de un waypoint se confirmó
+ * cruzando su coordenada contra la geometría real de OpenStreetMap (Overpass,
+ * distancia punto-segmento a cada `way["highway"]` cercano), igual que la
+ * resolución de las señales R-100/R-101 de Gran Via más arriba — un paso de
+ * peatones en un cruce puede pertenecer a cualquiera de las calles que se
+ * cruzan ahí, no solo a Carrer de la Marina:
+ * - id 10775653 (Pas de tacs, a 10.3m de wp5): confirmado sobre Marina — 2.6m
+ *   de su `way["highway"="primary"]`, 14.5m del footway más cercano de Avinguda
+ *   Diagonal.
+ * - id 8284852 (Pas de tacs, a 16.9m de wp1): confirmado sobre Marina — 0.3m de
+ *   su primary/footway, 8.7m del footway más cercano de Gran Via.
+ * - id 10775619 (Pas de tacs, a 27.3m de wp6): confirmado sobre Marina — 2.0m
+ *   de su primary, 10.7m del footway más cercano de Carrer d'Aragó.
+ * headingDeg de las tres es el rumbo de la ruta en el waypoint más cercano
+ * (misma convención que el resto de señales de este archivo), no la orientación
+ * real del paso —ese dato tampoco está en el CSV.
+ * Tres candidatos más se descartaron por pertenecer a otra calle del mismo
+ * cruce, o por ambigüedad genuina: id 9666096 (cerca de wp0/wp1, 0.4-0.8m de
+ * la Gran Via/su lateral, 15.6m de Marina) y id 9772800 (cerca de wp3, 0.1m de
+ * Carrer de la Diputació) están claramente en la calle transversal, no en
+ * Marina. id 10775760 (cerca de wp4) queda a 1.1m de Consell de Cent y 1.2m de
+ * Marina — empatado dentro del margen de error, justo en la esquina del
+ * cruce; tratado como no resuelto en vez de adivinar. id 10775583 (cerca de
+ * wp6, 0.5m de Carrer d'Aragó) también es de la transversal.
  */
 export const ruta01: RouteDefinition = {
   id: 'ruta-01',
@@ -101,6 +114,16 @@ export const ruta01: RouteDefinition = {
     {
       type: 'pedestrian-crossing',
       position: { lat: 41.4014622, lon: 2.1783051 },
+      headingDeg: 318.8,
+    },
+    {
+      type: 'pedestrian-crossing',
+      position: { lat: 41.399381, lon: 2.1808991 },
+      headingDeg: 314.9,
+    },
+    {
+      type: 'pedestrian-crossing',
+      position: { lat: 41.4017116, lon: 2.1780453 },
       headingDeg: 318.8,
     },
   ],

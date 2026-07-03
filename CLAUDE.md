@@ -87,12 +87,13 @@ no cruces con prioridad). Vehículos y offsets de aparición (`AI_VEHICLE_INITIA
 **Peatones** (`pedestrian-ai.ts`): un peatón por cada `SignPlacement` de tipo `pedestrian-crossing`
 de la ruta, cruzando en línea recta perpendicular a la calzada en ese punto (`pedestrianPose`),
 esperando `DWELL_TIME_S` (placeholder determinista, misma clase de simplificación que el ciclo de
-`traffic-light.ts`) en cada acera antes de volver a cruzar. `ruta-01` tiene un paso real cerca de
-wp5/Avinguda Diagonal (inventario oficial "infraestructures-inventari-pas-vianants" del Ajuntament,
-ver el comentario de cabecera de `route.ts` para el método de verificación — confirmado sobre
-Carrer de la Marina y no Diagonal vía distancia punto-segmento a la geometría real de OSM). Hay más
-candidatos reales cerca de otros waypoints sin verificar todavía (límite de peticiones del Overpass
-público durante esa sesión, no descartados) — ver `route.ts`.
+`traffic-light.ts`) en cada acera antes de volver a cruzar. `ruta-01` tiene 3 pasos reales (cerca de
+wp1, wp5/Avinguda Diagonal y wp6), del inventario oficial "infraestructures-inventari-pas-vianants"
+del Ajuntament — ver el comentario de cabecera de `route.ts` para el método de verificación
+(distancia punto-segmento a la geometría real de OSM, para confirmar que cada uno pertenece a
+Carrer de la Marina y no a la calle transversal del mismo cruce). Otros 3 candidatos del mismo
+cruce se descartaron por pertenecer claramente a la transversal, o por ambigüedad genuina en la
+propia esquina (ver `route.ts`) — no es que falte verificarlos, ya se revisaron y no aplican.
 
 Ningún vehículo (jugador ni IA) cede el paso a peatones todavía, ni hay colisión física
 jugador↔vehículo de IA ni jugador↔peatón (a diferencia de jugador↔edificio en `core/collision.ts`)
@@ -150,8 +151,8 @@ de maniobras, `src/ui/hud.ts` + `core/hud.ts`), una pantalla final de resultado 
 falta llegar al final), `'pass'` solo al llegar al final de la ruta (radio de 10m al último
 waypoint) sin ningún fallo — y un primer corte de IA de tráfico (`core/traffic-ai.ts` +
 `core/pedestrian-ai.ts`, ver arriba): vehículos ambiente que respetan semáforos en rojo y guardan
-distancia, y un peatón real cerca de wp5 que cruza de acera a acera. Gate de licencia Pro completo
-(ver arriba), sin nada Pro que gatear todavía.
+distancia, y 3 peatones reales (wp1, wp5, wp6) que cruzan de acera a acera. Gate de licencia Pro
+completo (ver arriba), sin nada Pro que gatear todavía.
 
 **No implementado todavía**:
 - Criterios de evaluación para `roundabout`, `lane-change` y `give-way` (los otros 3
@@ -159,9 +160,6 @@ distancia, y un peatón real cerca de wp5 que cruza de acera a acera. Gate de li
   arriba), pero solo `traffic-light` se usa en una ruta real hoy.
 - Físicas de vehículo "de verdad" (motor de físicas de Babylon) — el controlador actual es
   cinemático, decisión deliberada hasta ahora, no una limitación técnica descubierta.
-- Verificar contra OSM los demás candidatos reales de paso de peatones cerca de otros waypoints de
-  `ruta-01` (ver `route.ts`) — quedaron pendientes por límite de peticiones del Overpass público,
-  no descartados.
 - Modelo de carriles/sentido contrario para la IA de vehículos — hoy todos los coches de IA
   circulan en el mismo sentido que el jugador, por el mismo trazado.
 - Ceder el paso: ningún vehículo (jugador ni IA) cede el paso a peatones todavía.
