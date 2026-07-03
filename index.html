@@ -75,6 +75,23 @@
         cursor: pointer;
       }
       #license-message { font-size: 12px; opacity: 0.85; min-height: 1em; }
+
+      #exam-result {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 20px;
+        background: rgba(10, 10, 14, 0.85);
+        pointer-events: auto;
+      }
+      #exam-result[hidden] { display: none; }
+      #exam-result-badge { font-size: 48px; font-weight: 800; padding: 10px 28px; border-radius: 12px; }
+      #exam-result-badge.exam-result-badge--pass { background: #2fae5c; color: #04220f; }
+      #exam-result-badge.exam-result-badge--fail { background: #d1452f; color: #240600; }
+      #exam-result-maneuvers { list-style: none; margin: 0; padding: 0; width: 100%; max-width: 320px; }
     </style>
   </head>
   <body>
@@ -96,6 +113,10 @@
           <button type="submit">Activar</button>
         </form>
         <span id="license-message"></span>
+      </div>
+      <div id="exam-result" hidden>
+        <span id="exam-result-badge"></span>
+        <ul id="exam-result-maneuvers"></ul>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>

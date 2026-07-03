@@ -1,5 +1,6 @@
 import { Color3, Engine, FollowCamera, HemisphericLight, MeshBuilder, Scene, StandardMaterial, Vector3 } from '@babylonjs/core';
 import { findCollidingBuilding, vehicleCorners } from './core/collision';
+import { examOutcome, hasReachedFinish } from './core/exam-result';
 import { toLocalMeters } from './core/geo';
 import { currentSpeedLimitKmh, maneuverChecklistLabel, speedMsToKmh } from './core/hud';
 import { licenseStatusView } from './core/license';
@@ -31,6 +32,7 @@ import {
   VEHICLE_ON_ROAD_COLOR,
   VEHICLE_WIDTH_M,
 } from './scene/vehicle-mesh';
+import { buildExamResultScreen } from './ui/exam-result-screen';
 import { buildHud } from './ui/hud';
 import { buildLicensePanel } from './ui/license-panel';
 
@@ -174,10 +176,15 @@ function createScene(): Scene {
   const hud = buildHud(freeRoute.maneuvers);
   maneuverProgress.forEach((entry, index) => hud.setManeuverState(index, maneuverChecklistLabel(entry)));
 
+  const examResultScreen = buildExamResultScreen();
+  const lastWaypointLocal = routePoints[routePoints.length - 1];
+
   const getInput = attachKeyboardInput();
   let wasOnRoad = true;
   let wasColliding = false;
   let elapsedSimS = 0;
+  let reachedFinish = false;
+  let examOutcomeShown: ReturnType<typeof examOutcome> = null;
   scene.onBeforeRenderObservable.add(() => {
     const dtSeconds = engine.getDeltaTime() / 1000;
     elapsedSimS += dtSeconds;
@@ -295,6 +302,21 @@ function createScene(): Scene {
       const phase = getTrafficLightPhase(elapsedSimS, maneuver.atWaypointIndex);
       marker.material.diffuseColor = TRAFFIC_LIGHT_PHASE_COLORS[phase];
     });
+
+    // Veredicto agregado del examen (ver core/exam-result.ts): 'fail' en cuanto
+    // cualquier maniobra falla, 'pass' solo al llegar al final de la ruta sin
+    // fallos. reachedFinish es "pegajoso" (una vez true, no vuelve a false) para
+    // no parpadear si el vehículo se aleja del último waypoint tras llegar.
+    reachedFinish = reachedFinish || hasReachedFinish({ x: vehicleState.x, z: vehicleState.z }, lastWaypointLocal);
+    const outcome = examOutcome(maneuverProgress, reachedFinish);
+    if (outcome !== null && outcome !== examOutcomeShown) {
+      examOutcomeShown = outcome;
+      examResultScreen.show(
+        outcome,
+        maneuverProgress.map((entry) => maneuverChecklistLabel(entry)),
+      );
+      console.log(`Examen finalizado: ${outcome === 'pass' ? 'Apto' : 'No apto'}`);
+    }
   });
 
   console.log(`Ruta cargada: ${freeRoute.name} (${freeRoute.waypoints.length} waypoints)`);

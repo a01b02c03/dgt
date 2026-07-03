@@ -114,16 +114,19 @@ despliegue en Freehostia (PHP 8.4 + MySQL 8) y el contrato de los 5 endpoints.
 de `ruta-01` + mallas de calle/edificios (`src/scene/road-mesh.ts`, `building-mesh.ts`), vehículo
 con controlador **cinemático** (no motor de físicas — `src/scene/vehicle-controller.ts`) e input de
 teclado (`keyboard-input.ts`), colisión bloqueante con edificios (`core/collision.ts`), detección de
-salida de calzada no bloqueante (`core/road-bounds.ts`), señalización real, maniobras de semáforo
-con evaluación pass/fail, y un primer HUD (velocímetro + checklist de maniobras, `src/ui/hud.ts` +
-`core/hud.ts`). Gate de licencia Pro completo (ver arriba), sin nada Pro que gatear todavía.
+salida de calzada no bloqueante (`core/road-bounds.ts`), señalización real, maniobras de semáforo,
+cambio de sentido y aparcamiento con evaluación pass/fail, un primer HUD (velocímetro + checklist
+de maniobras, `src/ui/hud.ts` + `core/hud.ts`), y una pantalla final de resultado del examen
+(`core/exam-result.ts` + `src/ui/exam-result-screen.ts`): veredicto agregado apto/no apto —
+`'fail'` en cuanto cualquier maniobra evaluada falla (como una falta eliminatoria real, no hace
+falta llegar al final), `'pass'` solo al llegar al final de la ruta (radio de 10m al último
+waypoint) sin ningún fallo. Gate de licencia Pro completo (ver arriba), sin nada Pro que gatear
+todavía.
 
 **No implementado todavía**:
 - Criterios de evaluación para `roundabout`, `lane-change` y `give-way` (los otros 3
   `ManeuverType` sin lógica) — `traffic-light`, `u-turn` y `parallel-park` ya la tienen (ver
   arriba), pero solo `traffic-light` se usa en una ruta real hoy.
-- Pantalla de resultado final del examen (apto/no apto agregado); hoy el HUD solo muestra estado
-  por maniobra individual, no hay resumen al terminar la ruta.
 - Físicas de vehículo "de verdad" (motor de físicas de Babylon) — el controlador actual es
   cinemático, decisión deliberada hasta ahora, no una limitación técnica descubierta.
 - IA de tráfico/peatones (ver pipeline arriba, paso 5 — pensado como genérico y reutilizable,
