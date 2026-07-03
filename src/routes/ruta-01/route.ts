@@ -54,6 +54,16 @@ import type { RouteDefinition } from '../../core/route-types';
  * wp0 (10 elementos a <25m, mismas coordenadas de cruce), y wp2 no tiene ningún
  * elemento semafórico activo a <25m.
  *
+ * wp2 investigado también como posible cruce sin semaforizar (candidato a
+ * maniobra de prioridad/ceda el paso): descartado. Overpass (`way[highway]`
+ * a <70m de wp2, lat 41.3996031/lon 2.1806113) no devuelve ninguna calle
+ * transversal — solo los propios tramos de Carrer de la Marina (ways
+ * 44029286/237521097/490667333) y las Gran Via/laterals que ya pertenecen al
+ * cruce de wp0/wp1, demasiado lejos para ser el mismo cruce. wp2 es
+ * simplemente el punto de una ligera curva del trazado de Marina (headingDeg
+ * pasa de 314.9° a 315.1°), no una intersección real. No hay, por tanto,
+ * ningún cruce sin semaforizar verificable en esta ruta hoy.
+ *
  * Señales `pedestrian-crossing` tomadas del inventario oficial de pasos de peatones
  * del Ajuntament de Barcelona (dataset "infraestructures-inventari-pas-vianants",
  * filtrado a Data_Baixa vacío = activo). El dataset mezcla pasos de peatones
