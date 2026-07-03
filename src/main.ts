@@ -3,6 +3,12 @@ import { findCollidingBuilding, vehicleCorners } from './core/collision';
 import { examOutcome, hasReachedFinish } from './core/exam-result';
 import { toLocalMeters } from './core/geo';
 import { currentSpeedLimitKmh, maneuverChecklistLabel, speedMsToKmh } from './core/hud';
+import {
+  buildOncomingRoute,
+  LANE_OFFSET_M,
+  mirroredArcLengthOfWaypoint,
+  offsetPoseToLane,
+} from './core/lanes';
 import { licenseStatusView } from './core/license';
 import { activateLicense, fetchSessionStatus, requestCheckout, validateLicense } from './license/api';
 import { getOrCreateDeviceId, readStoredLicense, writeStoredLicense } from './license/storage';
@@ -183,8 +189,8 @@ function createScene(): Scene {
   buildSignMarkers(freeRoute, origin, scene);
 
   // Tráfico ambiente: vehículos de IA que siguen el mismo trazado que el
-  // jugador (todavía no hay modelo de carriles/sentido contrario, ver
-  // CLAUDE.md), respetan los semáforos en rojo y guardan distancia con el
+  // jugador, en su propio carril (mitad derecha de la calzada, ver
+  // core/lanes.ts), respetan los semáforos en rojo y guardan distancia con el
   // vehículo inmediatamente delante (jugador u otro coche de IA) — ver
   // core/traffic-ai.ts. Offsets iniciales arbitrarios, no ligados a ningún
   // dato real; se descartan los que caen más allá del final de la ruta.
@@ -194,17 +200,36 @@ function createScene(): Scene {
   const aiVehicles = AI_VEHICLE_INITIAL_OFFSETS_M.filter((offsetM) => offsetM < routeLengthM).map((offsetM) => {
     const { mesh, bodyMaterial } = buildVehicleMesh(scene);
     bodyMaterial.diffuseColor = AI_VEHICLE_COLOR;
-    const pose = poseAtArcLength(routePoints, arcLengthTable, offsetM);
+    const pose = offsetPoseToLane(poseAtArcLength(routePoints, arcLengthTable, offsetM), LANE_OFFSET_M);
     mesh.position.x = pose.x;
     mesh.position.z = pose.z;
     mesh.rotation.y = pose.headingRad;
     return { mesh, state: createAiVehicleState(offsetM) };
   });
 
+  // Tráfico de IA en sentido contrario: solo existe en el tramo de doble
+  // sentido inicial de la ruta (ver core/lanes.ts y el comentario de cabecera
+  // de ruta-01/route.ts sobre qué tramos son oneway según OSM). Reutiliza la
+  // misma lógica de traffic-ai.ts sobre un sub-trazado invertido, así que el
+  // rumbo de cada pose ya sale correctamente invertido sin caso especial.
+  const oncomingRoute = buildOncomingRoute(freeRoute.waypoints, routePoints);
+  const oncomingArcLengthTable = buildArcLengthTable(oncomingRoute.points);
+  const oncomingRouteLengthM = oncomingArcLengthTable[oncomingArcLengthTable.length - 1];
+  const ONCOMING_VEHICLE_INITIAL_OFFSETS_M = [30, 90];
+  const oncomingVehicles = ONCOMING_VEHICLE_INITIAL_OFFSETS_M.filter((offsetM) => offsetM < oncomingRouteLengthM).map(
+    (offsetM) => {
+      const { mesh, bodyMaterial } = buildVehicleMesh(scene);
+      bodyMaterial.diffuseColor = AI_VEHICLE_COLOR;
+      const pose = offsetPoseToLane(poseAtArcLength(oncomingRoute.points, oncomingArcLengthTable, offsetM), LANE_OFFSET_M);
+      mesh.position.x = pose.x;
+      mesh.position.z = pose.z;
+      mesh.rotation.y = pose.headingRad;
+      return { mesh, state: createAiVehicleState(offsetM) };
+    },
+  );
+
   // Peatones: uno por cada señal 'pedestrian-crossing' de la ruta, cruzando
   // perpendicular a la calzada en ese punto (ver core/pedestrian-ai.ts).
-  // ruta-01 no tiene todavía ninguna señal de este tipo (ver CLAUDE.md), así
-  // que este array está vacío hoy y no tiene efecto visible.
   const pedestrianCrossingHalfWidthM = ROAD_WIDTH_M / 2 + PEDESTRIAN_CROSSING_MARGIN_M;
   const pedestrians = freeRoute.signs
     .filter((sign) => sign.type === 'pedestrian-crossing')
@@ -380,7 +405,45 @@ function createScene(): Scene {
       const stopLineArcM = nextStopArcLengthM(vehicle.state.distanceAlongRouteM, redLightArcLengths, leadArcM);
 
       vehicle.state = stepAiVehicle(vehicle.state, { speedLimitMs, stopLineArcM }, dtSeconds);
-      const pose = poseAtArcLength(routePoints, arcLengthTable, vehicle.state.distanceAlongRouteM);
+      const pose = offsetPoseToLane(
+        poseAtArcLength(routePoints, arcLengthTable, vehicle.state.distanceAlongRouteM),
+        LANE_OFFSET_M,
+      );
+      vehicle.mesh.position.x = pose.x;
+      vehicle.mesh.position.z = pose.z;
+      vehicle.mesh.rotation.y = pose.headingRad;
+    });
+
+    // Tráfico de IA en sentido contrario: mismos criterios que el tráfico
+    // normal (semáforo en rojo por delante o el vehículo de delante en su
+    // propio sentido), pero sobre el sub-trazado invertido de oncomingRoute
+    // — no interactúan con el jugador ni con el tráfico del sentido normal
+    // (carriles distintos), y no hay colisión física entre ellos, mismo gap
+    // documentado en CLAUDE.md que el resto de la IA de tráfico.
+    const oncomingRedLightArcLengths = freeRoute.maneuvers
+      .filter((maneuver) => maneuver.type === 'traffic-light')
+      .filter((maneuver) => getTrafficLightPhase(elapsedSimS, maneuver.atWaypointIndex) === 'red')
+      .map((maneuver) => mirroredArcLengthOfWaypoint(oncomingArcLengthTable, oncomingRoute.twoWayEndIndex, maneuver.atWaypointIndex))
+      .filter((arc): arc is number => arc !== null);
+    const oncomingArcsBeforeStep = oncomingVehicles.map((vehicle) => vehicle.state.distanceAlongRouteM);
+
+    oncomingVehicles.forEach((vehicle, index) => {
+      const otherArcs = oncomingArcsBeforeStep.filter((_, otherIndex) => otherIndex !== index);
+      const arcsAhead = otherArcs.filter((arc) => arc > vehicle.state.distanceAlongRouteM);
+      const leadArcM = arcsAhead.length > 0 ? Math.min(...arcsAhead) : null;
+
+      const oncomingBounds = queryRoadBounds(routePoints, ROAD_WIDTH_M, {
+        x: vehicle.mesh.position.x,
+        z: vehicle.mesh.position.z,
+      });
+      const speedLimitMs = currentSpeedLimitKmh(freeRoute.waypoints, oncomingBounds.segmentIndex) / 3.6;
+      const stopLineArcM = nextStopArcLengthM(vehicle.state.distanceAlongRouteM, oncomingRedLightArcLengths, leadArcM);
+
+      vehicle.state = stepAiVehicle(vehicle.state, { speedLimitMs, stopLineArcM }, dtSeconds);
+      const pose = offsetPoseToLane(
+        poseAtArcLength(oncomingRoute.points, oncomingArcLengthTable, vehicle.state.distanceAlongRouteM),
+        LANE_OFFSET_M,
+      );
       vehicle.mesh.position.x = pose.x;
       vehicle.mesh.position.z = pose.z;
       vehicle.mesh.rotation.y = pose.headingRad;

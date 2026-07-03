@@ -84,6 +84,16 @@ import type { RouteDefinition } from '../../core/route-types';
  * Marina — empatado dentro del margen de error, justo en la esquina del
  * cruce; tratado como no resuelto en vez de adivinar. id 10775583 (cerca de
  * wp6, 0.5m de Carrer d'Aragó) también es de la transversal.
+ *
+ * `twoWay` por waypoint (usado por la IA de tráfico en sentido contrario, ver
+ * core/lanes.ts) viene del tag `oneway` de los `way["highway"="primary"]` reales
+ * de Carrer de la Marina en cada tramo (Overpass, bbox de toda la ruta):
+ * wp0→wp1 (way 44029286, oneway=no), wp1→wp2 (237521097, oneway=no) y wp2→wp3
+ * (490667333, oneway=no) son de doble sentido; wp3→wp4 (237519393, oneway=yes),
+ * wp4→wp5 (674507833/165522954, oneway=yes) y wp5→wp6 (313379198, oneway=yes)
+ * son de sentido único — coincide con el R-101 (no-entry) ya colocado cerca de
+ * wp4 más arriba, que marca justo este cambio. No hay tramos de doble sentido
+ * más allá de wp3 en esta ruta.
  */
 export const ruta01: RouteDefinition = {
   id: 'ruta-01',
@@ -91,13 +101,13 @@ export const ruta01: RouteDefinition = {
   city: 'Barcelona',
   isFree: true,
   waypoints: [
-    { position: { lat: 41.3991287, lon: 2.1812288 }, headingDeg: 317.4, speedLimitKmh: 50 },
-    { position: { lat: 41.3992773, lon: 2.1810465 }, headingDeg: 314.9, speedLimitKmh: 50 },
-    { position: { lat: 41.3996031, lon: 2.1806113 }, headingDeg: 315.1, speedLimitKmh: 50 },
-    { position: { lat: 41.4000834, lon: 2.1799739 }, headingDeg: 315.6, speedLimitKmh: 30 },
-    { position: { lat: 41.4008045, lon: 2.179034 }, headingDeg: 322.0, speedLimitKmh: 30 },
-    { position: { lat: 41.4014084, lon: 2.1784059 }, headingDeg: 318.8, speedLimitKmh: 30 },
-    { position: { lat: 41.4018988, lon: 2.1778328 }, headingDeg: 318.8, speedLimitKmh: 30 },
+    { position: { lat: 41.3991287, lon: 2.1812288 }, headingDeg: 317.4, speedLimitKmh: 50, twoWay: true },
+    { position: { lat: 41.3992773, lon: 2.1810465 }, headingDeg: 314.9, speedLimitKmh: 50, twoWay: true },
+    { position: { lat: 41.3996031, lon: 2.1806113 }, headingDeg: 315.1, speedLimitKmh: 50, twoWay: true },
+    { position: { lat: 41.4000834, lon: 2.1799739 }, headingDeg: 315.6, speedLimitKmh: 30, twoWay: false },
+    { position: { lat: 41.4008045, lon: 2.179034 }, headingDeg: 322.0, speedLimitKmh: 30, twoWay: false },
+    { position: { lat: 41.4014084, lon: 2.1784059 }, headingDeg: 318.8, speedLimitKmh: 30, twoWay: false },
+    { position: { lat: 41.4018988, lon: 2.1778328 }, headingDeg: 318.8, speedLimitKmh: 30, twoWay: false },
   ],
   signs: [
     {

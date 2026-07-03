@@ -8,6 +8,13 @@ export interface Waypoint {
   position: GeoPoint;
   headingDeg: number;
   speedLimitKmh: number;
+  /**
+   * Si el tramo de calzada que empieza en este waypoint es de doble sentido.
+   * Misma convención "aplica desde este waypoint en adelante" que
+   * speedLimitKmh — ver core/lanes.ts para dónde se usa (tráfico de IA en
+   * sentido contrario).
+   */
+  twoWay: boolean;
 }
 
 export type SignType =

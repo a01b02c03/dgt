@@ -8,7 +8,7 @@ import {
 import type { Maneuver, Waypoint } from './route-types';
 
 // Waypoint único en el origen, heading 0 (norte, +z), sin límite de interés aquí.
-const waypoints: Waypoint[] = [{ position: { lat: 0, lon: 0 }, headingDeg: 0, speedLimitKmh: 30 }];
+const waypoints: Waypoint[] = [{ position: { lat: 0, lon: 0 }, headingDeg: 0, speedLimitKmh: 30, twoWay: true }];
 const waypointPositions = [{ x: 0, z: 0 }];
 
 function parkManeuver(): Maneuver {

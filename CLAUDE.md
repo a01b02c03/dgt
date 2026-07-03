@@ -79,10 +79,27 @@ pero proyectada (`estimateArcLength`, ya que el vehículo del jugador se mueve l
 arco). Cada coche de IA frena a una distancia fija (`BRAKING_DISTANCE_M`, sin modelo de frenada
 real) ante lo primero que tenga por delante: un semáforo en rojo sin cruzar (reutiliza
 `getTrafficLightPhase`) o el vehículo inmediatamente delante — que puede ser otro coche de IA o el
-propio jugador — guardando `FOLLOWING_GAP_M`. Sin modelo de carriles/sentido contrario todavía:
-todos los coches de IA circulan por el mismo trazado que el jugador (tráfico en el mismo sentido,
-no cruces con prioridad). Vehículos y offsets de aparición (`AI_VEHICLE_INITIAL_OFFSETS_M` en
-`main.ts`) son arbitrarios, no ligados a ningún dato real de tráfico de Barcelona.
+propio jugador — guardando `FOLLOWING_GAP_M`. Vehículos y offsets de aparición
+(`AI_VEHICLE_INITIAL_OFFSETS_M` en `main.ts`) son arbitrarios, no ligados a ningún dato real de
+tráfico de Barcelona.
+
+**Carriles / sentido contrario** (`core/lanes.ts`): la calzada de `ROAD_WIDTH_M` (6m) se divide en
+dos mitades de 3m, una por sentido, centradas en `±LANE_OFFSET_M` (1.5m) — `offsetPoseToLane`
+desplaza cualquier pose lateralmente respecto a su propio rumbo (así que para un vehículo en
+sentido contrario, cuyo rumbo ya sale invertido de fábrica, "a la derecha" ya es su derecha real
+sin ningún caso especial). El tráfico en sentido contrario reutiliza toda la lógica de
+`traffic-ai.ts` (frenada ante rojo, distancia de seguridad) sobre un sub-trazado invertido
+(`buildOncomingRoute`) restringido al **tramo de doble sentido que arranca al principio de la
+ruta** — `Waypoint.twoWay` marca qué segmentos lo son, con la misma convención "aplica desde este
+waypoint en adelante" que `speedLimitKmh`. Simplificación deliberada: `buildOncomingRoute` solo
+detecta un único tramo de doble sentido al principio (no doble-sentido → sentido-único →
+doble-sentido otra vez) — suficiente para `ruta-01`, el único caso real hoy. En `ruta-01`,
+`twoWay` viene de los tags `oneway` reales de OSM para cada tramo de Carrer de la Marina (ver el
+comentario de cabecera de `route.ts`): doble sentido de wp0 a wp3, sentido único de wp3 en
+adelante — coincide con el R-101 (no-entry) ya colocado ahí. El tráfico normal (mismo sentido que
+el jugador) también usa su propio carril (`+LANE_OFFSET_M`) en vez de circular exactamente sobre
+el eje de la calzada. **No habilita `lane-change`**: esa maniobra necesita varios carriles en el
+mismo sentido, no carriles opuestos — Carrer de la Marina es de un solo carril por sentido.
 
 **Peatones** (`pedestrian-ai.ts`): un peatón por cada `SignPlacement` de tipo `pedestrian-crossing`
 de la ruta, cruzando en línea recta perpendicular a la calzada en ese punto (`pedestrianPose`),
@@ -150,9 +167,10 @@ de maniobras, `src/ui/hud.ts` + `core/hud.ts`), una pantalla final de resultado 
 `'fail'` en cuanto cualquier maniobra evaluada falla (como una falta eliminatoria real, no hace
 falta llegar al final), `'pass'` solo al llegar al final de la ruta (radio de 10m al último
 waypoint) sin ningún fallo — y un primer corte de IA de tráfico (`core/traffic-ai.ts` +
-`core/pedestrian-ai.ts`, ver arriba): vehículos ambiente que respetan semáforos en rojo y guardan
-distancia, y 3 peatones reales (wp1, wp5, wp6) que cruzan de acera a acera. Gate de licencia Pro
-completo (ver arriba), sin nada Pro que gatear todavía.
+`core/pedestrian-ai.ts` + `core/lanes.ts`, ver arriba): vehículos ambiente en su propio carril que
+respetan semáforos en rojo y guardan distancia, tráfico en sentido contrario en el tramo de doble
+sentido de `ruta-01` (wp0-wp3), y 3 peatones reales (wp1, wp5, wp6) que cruzan de acera a acera.
+Gate de licencia Pro completo (ver arriba), sin nada Pro que gatear todavía.
 
 **No implementado todavía**:
 - Criterios de evaluación para `roundabout`, `lane-change` y `give-way` (los otros 3
@@ -160,9 +178,10 @@ completo (ver arriba), sin nada Pro que gatear todavía.
   arriba), pero solo `traffic-light` se usa en una ruta real hoy.
 - Físicas de vehículo "de verdad" (motor de físicas de Babylon) — el controlador actual es
   cinemático, decisión deliberada hasta ahora, no una limitación técnica descubierta.
-- Modelo de carriles/sentido contrario para la IA de vehículos — hoy todos los coches de IA
-  circulan en el mismo sentido que el jugador, por el mismo trazado.
-- Ceder el paso: ningún vehículo (jugador ni IA) cede el paso a peatones todavía.
+- Modelo de varios carriles en el mismo sentido (necesario para `lane-change`) — el modelo de
+  carriles actual (ver arriba) solo distingue sentido propio/contrario, un carril cada uno.
+- Ceder el paso: ningún vehículo (jugador ni IA) cede el paso a peatones todavía, ni hay cruces con
+  prioridad entre el tráfico de IA de distintas calles.
 - Colisión física jugador↔vehículo de IA y jugador↔peatón (hoy solo hay jugador↔edificio, ver
   `core/collision.ts`).
 - Verificación del checkout de Stripe contra la API real (hoy solo probado con un fake HTTP
