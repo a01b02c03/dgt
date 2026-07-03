@@ -62,14 +62,14 @@ cada dato (señales, semáforos, exclusión de cruces ambiguos) está documentad
 cabecera de `route.ts` — consultarlo antes de asumir que un dato es aproximado.
 
 De los 6 `ManeuverType` del modelo, `traffic-light` (`traffic-light.ts` + `traffic-light-evaluator.ts`),
-`u-turn` (`u-turn-evaluator.ts`) y `parallel-park` (`parallel-park-evaluator.ts`) tienen ya criterios
-de evaluación pass/fail — ver la cabecera de cada archivo para el criterio exacto. Solo
-`traffic-light` se usa hoy en `ruta-01`; `u-turn` y `parallel-park` están conectados en el bucle de
-`main.ts` pero sin ninguna maniobra instanciada en ninguna ruta todavía, así que no tienen efecto
-visible hasta que una ruta real los use. `roundabout`, `lane-change` y `give-way` siguen sin
-criterios: su evaluación real depende de más IA de tráfico de la que hay hoy (ver abajo) o de un
-modelo de carriles (`lane-change`) que este proyecto no tiene todavía — ver "Estado y próximos
-pasos".
+`u-turn` (`u-turn-evaluator.ts`), `parallel-park` (`parallel-park-evaluator.ts`) y `give-way`
+(`give-way-evaluator.ts`) tienen ya criterios de evaluación pass/fail — ver la cabecera de cada
+archivo para el criterio exacto. `traffic-light` y `give-way` se usan hoy en `ruta-01`; `u-turn` y
+`parallel-park` están conectados en el bucle de `main.ts` pero sin ninguna maniobra instanciada en
+ninguna ruta todavía, así que no tienen efecto visible hasta que una ruta real los use.
+`roundabout` y `lane-change` siguen sin criterios: su evaluación real depende de más IA de tráfico
+de la que hay hoy (ver abajo) o de un modelo de carriles (`lane-change`) que este proyecto no tiene
+todavía — ver "Estado y próximos pasos".
 
 ### IA de tráfico (`src/core/traffic-ai.ts`, `src/core/pedestrian-ai.ts`)
 

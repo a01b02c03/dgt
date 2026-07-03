@@ -94,6 +94,14 @@ import type { RouteDefinition } from '../../core/route-types';
  * son de sentido único — coincide con el R-101 (no-entry) ya colocado cerca de
  * wp4 más arriba, que marca justo este cambio. No hay tramos de doble sentido
  * más allá de wp3 en esta ruta.
+ *
+ * Maniobras `give-way` (criterio en core/give-way-evaluator.ts): una por cada
+ * paso de peatones real verificado arriba, anclada al mismo waypoint que se
+ * usó para calcular su headingDeg (wp1, wp5, wp6) — no un waypoint nuevo, el
+ * emparejamiento maniobra↔peatón en main.ts es "el peatón más cercano al
+ * waypoint de la maniobra", así que reutilizar el mismo waypoint que ya
+ * identificaba a cada paso es lo que hace que ese emparejamiento resuelva al
+ * peatón correcto.
  */
 export const ruta01: RouteDefinition = {
   id: 'ruta-01',
@@ -162,6 +170,21 @@ export const ruta01: RouteDefinition = {
       type: 'traffic-light',
       atWaypointIndex: 6,
       description: "Semáforo en el cruce con Carrer d'Aragó",
+    },
+    {
+      type: 'give-way',
+      atWaypointIndex: 1,
+      description: 'Paso de peatones cerca de la Gran Via de les Corts Catalanes',
+    },
+    {
+      type: 'give-way',
+      atWaypointIndex: 5,
+      description: 'Paso de peatones en Avinguda Diagonal',
+    },
+    {
+      type: 'give-way',
+      atWaypointIndex: 6,
+      description: "Paso de peatones cerca de Carrer d'Aragó",
     },
   ],
 };

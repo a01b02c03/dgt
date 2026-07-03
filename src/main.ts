@@ -12,6 +12,7 @@ import {
 import { licenseStatusView } from './core/license';
 import { activateLicense, fetchSessionStatus, requestCheckout, validateLicense } from './license/api';
 import { getOrCreateDeviceId, readStoredLicense, writeStoredLicense } from './license/storage';
+import { createGiveWayEvalState, updateGiveWayOutcomes } from './core/give-way-evaluator';
 import { createManeuverProgress, updateManeuverProgress } from './core/maneuver-tracker';
 import { createParallelParkEvalState, updateParallelParkOutcomes } from './core/parallel-park-evaluator';
 import {
@@ -245,10 +246,36 @@ function createScene(): Scene {
       return { mesh, crossing, state };
     });
 
+  // Emparejamiento maniobra 'give-way' -> peatón más cercano a su waypoint,
+  // calculado una sola vez (ni las maniobras ni las posiciones de los pasos
+  // de peatones cambian en tiempo de ejecución): ruta-01 ancla cada maniobra
+  // give-way justo en el waypoint más próximo a su paso de peatones real (ver
+  // el comentario de cabecera de route.ts), así que "el más cercano" resuelve
+  // el emparejamiento correcto sin un campo explícito en el modelo de ruta.
+  const giveWayPedestrianIndices: (number | null)[] = freeRoute.maneuvers.map((maneuver) => {
+    if (maneuver.type !== 'give-way') {
+      return null;
+    }
+    const waypointLocal = routePoints[maneuver.atWaypointIndex];
+    let bestIndex: number | null = null;
+    let bestDistanceSq = Infinity;
+    pedestrians.forEach((pedestrian, index) => {
+      const distanceSq =
+        (pedestrian.crossing.position.x - waypointLocal.x) ** 2 +
+        (pedestrian.crossing.position.z - waypointLocal.z) ** 2;
+      if (distanceSq < bestDistanceSq) {
+        bestDistanceSq = distanceSq;
+        bestIndex = index;
+      }
+    });
+    return bestIndex;
+  });
+
   const maneuverMarkers = buildManeuverMarkers(freeRoute, origin, scene);
   const trafficLightMarkers = buildTrafficLightMarkers(freeRoute, origin, scene);
   let maneuverProgress = createManeuverProgress(freeRoute.maneuvers);
   let crossingState = createStopLineCrossingState(freeRoute.maneuvers.length);
+  let giveWayEvalState = createGiveWayEvalState(freeRoute.maneuvers.length);
   let uTurnEvalState = createUTurnEvalState(freeRoute.maneuvers.length);
   let parallelParkEvalState = createParallelParkEvalState(freeRoute.maneuvers.length);
 
@@ -357,6 +384,35 @@ function createScene(): Scene {
     crossingState = trafficLightResult.crossingState;
     maneuverProgress.forEach((entry, index) => {
       if (entry.outcome === previousOutcomes[index]) {
+        return;
+      }
+      hud.setManeuverState(index, maneuverChecklistLabel(entry));
+      console.log(`Maniobra "${entry.maneuver.description}": outcome ${entry.outcome}`);
+    });
+
+    // Evaluación pass/fail de maniobras give-way: mismo evento de cruce de
+    // línea que traffic-light (ver give-way-evaluator.ts), pero el criterio es
+    // si el peatón emparejado con esta maniobra (giveWayPedestrianIndices,
+    // calculado una sola vez arriba) está sobre la calzada en el instante de
+    // cruce. Usa el estado de los peatones del frame anterior (se actualizan
+    // más abajo), mismo patrón de snapshot que el resto de la IA de tráfico.
+    const previousGiveWayOutcomes = maneuverProgress.map((entry) => entry.outcome);
+    const giveWayObstructed = freeRoute.maneuvers.map((_maneuver, index) => {
+      const pedestrianIndex = giveWayPedestrianIndices[index];
+      return pedestrianIndex !== null && isPedestrianInRoadway(pedestrians[pedestrianIndex].state, ROAD_WIDTH_M / 2);
+    });
+    const giveWayResult = updateGiveWayOutcomes(
+      maneuverProgress,
+      giveWayEvalState,
+      freeRoute.waypoints,
+      routePoints,
+      { x: vehicleState.x, z: vehicleState.z },
+      giveWayObstructed,
+    );
+    maneuverProgress = giveWayResult.progress;
+    giveWayEvalState = giveWayResult.evalState;
+    maneuverProgress.forEach((entry, index) => {
+      if (entry.outcome === previousGiveWayOutcomes[index]) {
         return;
       }
       hud.setManeuverState(index, maneuverChecklistLabel(entry));
@@ -497,9 +553,11 @@ function createScene(): Scene {
 
     // Peatones: cruzan de acera a acera de forma autónoma (ver
     // core/pedestrian-ai.ts) — el peatón no reacciona al tráfico, es la IA de
-    // vehículos la que le cede el paso (ver más arriba). El jugador no tiene
-    // nada que le obligue a ceder: sigue siendo su responsabilidad como en un
-    // examen real, sin colisión física jugador↔peatón todavía (ver CLAUDE.md).
+    // vehículos la que le cede el paso (ver más arriba). El jugador tiene dos
+    // consecuencias si no cede: la colisión física (bloquea el movimiento,
+    // igual que un edificio) y, en los 3 pasos reales de ruta-01, la maniobra
+    // give-way asociada se marca 'fail' si el jugador cruza su línea con el
+    // peatón todavía en calzada (ver give-way-evaluator.ts).
     pedestrians.forEach((pedestrian) => {
       pedestrian.state = stepPedestrian(pedestrian.state, pedestrianCrossingHalfWidthM, dtSeconds);
       const pose = pedestrianPose(pedestrian.crossing, pedestrian.state);
