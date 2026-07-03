@@ -62,14 +62,19 @@ cada dato (señales, semáforos, exclusión de cruces ambiguos) está documentad
 cabecera de `route.ts` — consultarlo antes de asumir que un dato es aproximado.
 
 De los 6 `ManeuverType` del modelo, `traffic-light` (`traffic-light.ts` + `traffic-light-evaluator.ts`),
-`u-turn` (`u-turn-evaluator.ts`), `parallel-park` (`parallel-park-evaluator.ts`) y `give-way`
-(`give-way-evaluator.ts`) tienen ya criterios de evaluación pass/fail — ver la cabecera de cada
-archivo para el criterio exacto. `traffic-light` y `give-way` se usan hoy en `ruta-01`; `u-turn` y
-`parallel-park` están conectados en el bucle de `main.ts` pero sin ninguna maniobra instanciada en
-ninguna ruta todavía, así que no tienen efecto visible hasta que una ruta real los use.
-`roundabout` y `lane-change` siguen sin criterios: su evaluación real depende de más IA de tráfico
-de la que hay hoy (ver abajo) o de un modelo de carriles (`lane-change`) que este proyecto no tiene
-todavía — ver "Estado y próximos pasos".
+`u-turn` (`u-turn-evaluator.ts`), `parallel-park` (`parallel-park-evaluator.ts`), `roundabout`
+(`roundabout-evaluator.ts`) y `give-way` (`give-way-evaluator.ts`) tienen ya criterios de evaluación
+pass/fail — ver la cabecera de cada archivo para el criterio exacto. `traffic-light` y `give-way` se
+usan hoy en `ruta-01`; `u-turn`, `parallel-park` y `roundabout` están conectados en el bucle de
+`main.ts` pero sin ninguna maniobra instanciada en ninguna ruta todavía, así que no tienen efecto
+visible hasta que una ruta real los use. El criterio v1 de `roundabout` es deliberadamente
+simplificado (gira a la izquierda lo suficiente, no se detiene sin necesidad, no sale de calzada ni
+colisiona) y NO evalúa si el vehículo cedió el paso al tráfico que ya circula por la rotonda — no
+hay IA de tráfico circulando en rotondas todavía (ver "IA de tráfico" abajo, `traffic-ai.ts` sigue
+un trazado lineal, no un óvalo).
+`lane-change` sigue sin criterio: necesita un modelo de varios carriles en el mismo sentido que este
+proyecto no tiene todavía (el modelo de carriles actual solo distingue sentido propio/contrario, un
+carril cada uno, ver "IA de tráfico" abajo) — ver "Estado y próximos pasos".
 
 ### IA de tráfico (`src/core/traffic-ai.ts`, `src/core/pedestrian-ai.ts`)
 
@@ -199,8 +204,8 @@ de `ruta-01` + mallas de calle/edificios (`src/scene/road-mesh.ts`, `building-me
 con controlador **cinemático** (no motor de físicas — `src/scene/vehicle-controller.ts`) e input de
 teclado (`keyboard-input.ts`), colisión bloqueante con edificios, vehículos de IA y peatones
 (`core/collision.ts`), detección de salida de calzada no bloqueante (`core/road-bounds.ts`),
-señalización real, maniobras de semáforo, cambio de sentido y aparcamiento con evaluación pass/fail,
-un primer HUD (velocímetro + checklist de maniobras, `src/ui/hud.ts` + `core/hud.ts`), una pantalla
+señalización real, maniobras de semáforo, cambio de sentido, aparcamiento y rotonda con evaluación
+pass/fail, un primer HUD (velocímetro + checklist de maniobras, `src/ui/hud.ts` + `core/hud.ts`), una pantalla
 final de resultado del examen
 (`core/exam-result.ts` + `src/ui/exam-result-screen.ts`): veredicto agregado apto/no apto —
 `'fail'` en cuanto cualquier maniobra evaluada falla (como una falta eliminatoria real, no hace
@@ -217,9 +222,9 @@ fallan si el jugador cruza con el peatón todavía en la calzada. Gate de licenc
 arriba), sin nada Pro que gatear todavía.
 
 **No implementado todavía**:
-- Criterios de evaluación para `roundabout` y `lane-change` (los otros 2 `ManeuverType` sin
-  lógica) — `traffic-light`, `u-turn`, `parallel-park` y `give-way` ya la tienen (ver arriba), pero
-  solo `traffic-light` y `give-way` se usan en una ruta real hoy.
+- Criterio de evaluación para `lane-change` (el único `ManeuverType` sin lógica; `roundabout` ya la
+  tiene desde ahora, ver arriba) — bloqueado por la falta de modelo de varios carriles (ver abajo).
+  De los 5 tipos con criterio, solo `traffic-light` y `give-way` se usan en una ruta real hoy.
 - Físicas de vehículo "de verdad" (motor de físicas de Babylon) — el controlador actual es
   cinemático, decisión deliberada hasta ahora, no una limitación técnica descubierta.
 - Modelo de varios carriles en el mismo sentido (necesario para `lane-change`) — el modelo de

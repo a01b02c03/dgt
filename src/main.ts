@@ -15,6 +15,7 @@ import { getOrCreateDeviceId, readStoredLicense, writeStoredLicense } from './li
 import { createGiveWayEvalState, updateGiveWayOutcomes } from './core/give-way-evaluator';
 import { createManeuverProgress, updateManeuverProgress } from './core/maneuver-tracker';
 import { createParallelParkEvalState, updateParallelParkOutcomes } from './core/parallel-park-evaluator';
+import { createRoundaboutEvalState, updateRoundaboutOutcomes } from './core/roundabout-evaluator';
 import {
   advancePedestrian,
   createPedestrianState,
@@ -285,6 +286,7 @@ function createScene(): Scene {
   let giveWayEvalState = createGiveWayEvalState(freeRoute.maneuvers.length);
   let uTurnEvalState = createUTurnEvalState(freeRoute.maneuvers.length);
   let parallelParkEvalState = createParallelParkEvalState(freeRoute.maneuvers.length);
+  let roundaboutEvalState = createRoundaboutEvalState(freeRoute.maneuvers.length);
 
   const hud = buildHud(freeRoute.maneuvers);
   maneuverProgress.forEach((entry, index) => hud.setManeuverState(index, maneuverChecklistLabel(entry)));
@@ -430,10 +432,11 @@ function createScene(): Scene {
       console.log(`Maniobra "${entry.maneuver.description}": outcome ${entry.outcome}`);
     });
 
-    // Evaluación pass/fail de maniobras u-turn y parallel-park: ver
-    // u-turn-evaluator.ts / parallel-park-evaluator.ts para el criterio de
-    // cada una. Ninguna ruta instancia todavía estos tipos de maniobra
-    // (ver CLAUDE.md), así que estas llamadas no tienen efecto visible hoy.
+    // Evaluación pass/fail de maniobras u-turn, parallel-park y roundabout:
+    // ver u-turn-evaluator.ts / parallel-park-evaluator.ts /
+    // roundabout-evaluator.ts para el criterio de cada una. Ninguna ruta
+    // instancia todavía estos tipos de maniobra (ver CLAUDE.md), así que
+    // estas llamadas no tienen efecto visible hoy.
     const previousUTurnParkOutcomes = maneuverProgress.map((entry) => entry.outcome);
     const uTurnResult = updateUTurnOutcomes(
       maneuverProgress,
@@ -455,6 +458,15 @@ function createScene(): Scene {
     );
     maneuverProgress = parallelParkResult.progress;
     parallelParkEvalState = parallelParkResult.evalState;
+    const roundaboutResult = updateRoundaboutOutcomes(
+      maneuverProgress,
+      roundaboutEvalState,
+      { headingRad: vehicleState.headingRad, speedMs: vehicleState.speedMs },
+      bounds.onRoad,
+      anyCollision,
+    );
+    maneuverProgress = roundaboutResult.progress;
+    roundaboutEvalState = roundaboutResult.evalState;
     maneuverProgress.forEach((entry, index) => {
       if (entry.outcome === previousUTurnParkOutcomes[index]) {
         return;
