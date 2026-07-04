@@ -58,9 +58,12 @@ Via, 7 waypoints, ~419m), con señalización real (`src/routes/ruta-01/route.ts`
 extruidos desde sus huellas OSM (`src/routes/ruta-01/buildings.ts`). `ruta-02/route.ts` (primera
 ruta Pro, `isFree: false`) tiene geometría real de Plaça d'Espanya (rotonda) → Avinguda del
 Paral·lel → Carrer de Lleida (Eixample/Sant Antoni, 13 waypoints, ~580m) y 27 edificios
-(`src/routes/ruta-02/buildings.ts`) — su señalización (`signs`) queda vacía deliberadamente, ver
-"Estado y próximos pasos". El método de verificación de cada dato está documentado en el
-comentario de cabecera de cada `route.ts` — consultarlo antes de asumir que un dato es aproximado.
+(`src/routes/ruta-02/buildings.ts`) — su señalización real (semáforos, pasos de peatones,
+límite de 30 km/h cerca del aparcamiento) se verificó y añadió el 2026-07-04 con el mismo método
+de datasets oficiales que `ruta-01` (ver "Estado y próximos pasos" y el comentario de cabecera de
+`ruta-02/route.ts`); el interior de la propia rotonda queda deliberadamente sin resolver (ver
+abajo). El método de verificación de cada dato está documentado en el comentario de cabecera de
+cada `route.ts` — consultarlo antes de asumir que un dato es aproximado.
 
 Los 6 `ManeuverType` del modelo tienen ya criterios de evaluación pass/fail: `traffic-light`
 (`traffic-light.ts` + `traffic-light-evaluator.ts`), `u-turn` (`u-turn-evaluator.ts`), `parallel-park`
@@ -285,15 +288,21 @@ Pro (`isFree: false`), primer contenido real que protege el gate de licencia. In
 matemático (con las cabeceras/rumbos reales de la curva) y conduciendo en vivo en el navegador
 (`roundabout`, con el timing de giro adecuado). Selector de ruta (`ui/route-select-screen.ts`)
 cableado en `main.ts` para cuando hay más de una ruta accesible. Gate de licencia Pro completo (ver
-arriba), ya gateando `ruta-02` de verdad.
+arriba), ya gateando `ruta-02` de verdad. **Señalización real de `ruta-02`** (2026-07-04, mismo
+método de datasets oficiales que `ruta-01`, ver el comentario de cabecera de `ruta-02/route.ts`
+para el detalle completo de distancias y fuentes): 3 maniobras `traffic-light` (entrada
+semaforizada a la rotonda desde Gran Via lateral mar en wp0, cruce de Paral·lel con Lleida en
+wp10, cruce con Carrer de Tamarit en wp12), 3 maniobras `give-way` con sus pasos de peatones reales
+(wp0, wp9, wp12), y un límite real de 30 km/h cerca del aparcamiento (wp11 en adelante, antes 50 —
+confirmado por una señal R-301_30 real y por el tag `zone:maxspeed=30` de OSM en Carrer de Lleida).
+El interior de la propia rotonda (wp1, wp3-wp8) queda deliberadamente sin resolver: tiene elementos
+semafóricos reales cerca pero pertenecen a la regulación de un nudo de muchos brazos y no se pudo
+aislar qué fase gobierna cada punto del anillo — ver el comentario de cabecera de `route.ts` para
+el detalle de qué se descartó y por qué.
 
 **No implementado todavía**:
 - `u-turn` tiene criterio de evaluación (ver arriba) pero ninguna ruta real instancia todavía una
   maniobra de este tipo, así que no tiene efecto visible hoy.
-- Señalización real (semáforos, stop/ceda el paso, pasos de peatones) de `ruta-02` — a diferencia de
-  `ruta-01`, no se verificó exhaustivamente esta sesión; solo se confirmó que Plaça d'Espanya tiene
-  infraestructura semafórica real (41 nodos OSM `highway=traffic_signals` en su entorno inmediato).
-  `ruta-02.signs` y `.crossTraffic` quedan vacíos.
 - Físicas de vehículo "de verdad" (motor de físicas de Babylon) — el controlador actual es
   cinemático, decisión deliberada hasta ahora, no una limitación técnica descubierta.
 - Verificación del checkout de Stripe contra la API real (hoy solo probado con un fake HTTP

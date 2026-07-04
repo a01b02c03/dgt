@@ -67,16 +67,64 @@ import type { RouteDefinition } from '../../core/route-types';
  * **Maniobra `parallel-park`** (criterio en core/parallel-park-evaluator.ts):
  * anclada en wp11, junto a la plaza real de zona azul de Carrer de Lleida.
  *
- * **Limitación deliberada de esta ruta** (a diferencia de `ruta-01`): la
- * señalización real (semáforos, stop/ceda el paso, pasos de peatones) NO se
- * verificó de forma exhaustiva dato a dato esta sesión — solo se confirmó
- * que Plaça d'Espanya tiene infraestructura semafórica real (41 nodos OSM
- * `highway=traffic_signals` en su entorno inmediato), consistente con ser un
- * cruce semaforizado real, pero sin resolver qué fase gobierna cada
- * movimiento ni colocar semáforos como maniobra. `signs` queda vacío;
- * completar esto es trabajo pendiente para una sesión futura, igual que
- * cualquier cruce sin semaforizar real en esta zona (no investigado,
- * `crossTraffic` también vacío).
+ * **Señalización real** (2026-07-04, mismo método que `ruta-01`: datasets
+ * oficiales del Ajuntament de Barcelona —semàfors, senyals verticals, pas de
+ * vianants— filtrados a un bbox alrededor de la ruta, con verificación
+ * punto-segmento contra la geometría real de OSM para confirmar a qué calle
+ * pertenece cada elemento):
+ * - **`traffic-light`** en wp0: entrada semaforizada a la rotonda desde Gran
+ *   Via (lateral mar) — 3 elementos semafóricos car-facing (prefijo
+ *   `12-`/`13-`) a <30m, el más cercano a 7.4m. A diferencia de los 5 cruces
+ *   de `ruta-01` (cada uno una calle transversal nombrada), aquí no hay una
+ *   calle transversal: es el punto donde el propio carril de entrada se
+ *   incorpora a la calzada circular de la plaça, con semáforo propio (Plaça
+ *   d'Espanya es una rotonda semaforizada, no de prioridad simple).
+ * - **`traffic-light`** en wp10: cruce real de Avinguda del Paral·lel con
+ *   Carrer de Lleida (y Carrer de Vilamarí/Carrer de Floridablanca en el
+ *   mismo nudo, confirmado vía Overpass) — 10 elementos car-facing a <30m,
+ *   el más cercano a 6.8m.
+ * - **`traffic-light`** en wp12: cruce real de Carrer de Lleida con Carrer de
+ *   Tamarit — confirmado por nodo OSM compartido exacto entre ambas vías
+ *   (way 591263080 de Tamarit arranca en las mismas coordenadas que wp12), y
+ *   4 elementos car-facing a <30m, el más cercano a 6.3m.
+ * - **`give-way`** en wp0, wp9 y wp12: un paso de peatones real
+ *   (`255128000_Taco`, dataset "infraestructures-inventari-pas-vianants")
+ *   confirmado a 0.7m/0.3m/7.4m respectivamente de la vía real de la ruta en
+ *   ese tramo (Gran Via lateral mar / Avinguda del Paral·lel / Carrer de
+ *   Lleida) — misma verificación punto-segmento que `ruta-01`. El de wp9 no
+ *   coincide con ningún cruce semaforizado (es un paso intermedio en mitad
+ *   de Paral·lel, sin maniobra `traffic-light` asociada); los de wp0 y wp12
+ *   sí coinciden con las maniobras `traffic-light` de esos mismos waypoints,
+ *   mismo patrón que wp5/wp6 en `ruta-01`. Otros 2 candidatos cerca de wp9
+ *   (12.8m y 39.5m de la vía) y 1 más cerca de wp10 (25.3m, empatado entre
+ *   Paral·lel y Lleida, justo en la esquina del cruce) se descartaron por no
+ *   ajustar tan bien o por ambigüedad de esquina — mismo criterio que los
+ *   candidatos descartados de `ruta-01`.
+ * - **`speed-limit`** (30 km/h) cerca de wp11: señal real R-301_30 a 8.2m de
+ *   wp11 (mismo poste que una R-307 de restricción de estacionamiento, y una
+ *   S-17 de aparcamiento permitido a 9m — coherente con ser la zona azul real
+ *   ya usada para `parallel-park`). Confirmado además por el tag
+ *   `zone:maxspeed=30` de OSM en el propio `way` de Carrer de Lleida (4750707,
+ *   que declara `maxspeed=50` sin corregir, mismo tipo de tag por defecto
+ *   engañoso que ya corrigió `ruta-01` en su cruce con Carrer de la
+ *   Diputació) — dos fuentes independientes de acuerdo. Por eso
+ *   `speedLimitKmh` baja a 30 desde wp11 en adelante (antes 50 en toda la
+ *   ruta).
+ * - Ningún `R-1`/`R-2` (ceda el paso/stop) ni `R-500` (aviso de rotonda) real
+ *   encontrado en todo el bbox de la ruta — consistente con que los cruces de
+ *   esta zona son todos semaforizados, no de prioridad simple, y con que no
+ *   hay imagen de aviso de rotonda verificable para el sign type
+ *   `'roundabout'`. Ambos se dejan fuera deliberadamente, no por omisión.
+ * - **No resuelto todavía** (a diferencia de los puntos de arriba): wp1, wp3,
+ *   wp4, wp5, wp6, wp7 y wp8 (interior de la rotonda) tienen elementos
+ *   semafóricos car-facing cerca, pero pertenecen a la regulación propia de
+ *   Plaça d'Espanya (con muchos brazos: Gran Via, Avinguda del Paral·lel,
+ *   Carrer de la Creu Coberta, Avinguda de la Reina Maria Cristina) y no se
+ *   pudo aislar qué fase gobierna cada punto del interior del anillo —
+ *   tratados como no resueltos en vez de adivinar, igual que wp8 (6
+ *   elementos car-facing a <30m pero sin calle transversal real que lo
+ *   explique). Ningún cruce sin semaforizar verificable tampoco en esta zona
+ *   (mismo resultado que `ruta-01`); `crossTraffic` queda vacío.
  */
 export const ruta02: RouteDefinition = {
   id: 'ruta-02',
@@ -95,11 +143,63 @@ export const ruta02: RouteDefinition = {
     { position: { lat: 41.374823, lon: 2.1497372 }, headingDeg: 85.9, speedLimitKmh: 50, twoWay: false, ownDirectionLanes: 3 },
     { position: { lat: 41.3749552, lon: 2.152197 }, headingDeg: 90.5, speedLimitKmh: 50, twoWay: false, ownDirectionLanes: 3 },
     { position: { lat: 41.3749429, lon: 2.1540314 }, headingDeg: 157.1, speedLimitKmh: 50, twoWay: false, ownDirectionLanes: 3 },
-    { position: { lat: 41.3743076, lon: 2.154389 }, headingDeg: 157.1, speedLimitKmh: 50, twoWay: false, ownDirectionLanes: 3 },
-    { position: { lat: 41.3741311, lon: 2.1544884 }, headingDeg: 157.1, speedLimitKmh: 50, twoWay: false, ownDirectionLanes: 3 },
+    { position: { lat: 41.3743076, lon: 2.154389 }, headingDeg: 157.1, speedLimitKmh: 30, twoWay: false, ownDirectionLanes: 3 },
+    { position: { lat: 41.3741311, lon: 2.1544884 }, headingDeg: 157.1, speedLimitKmh: 30, twoWay: false, ownDirectionLanes: 3 },
   ],
-  signs: [],
+  signs: [
+    {
+      type: 'pedestrian-crossing',
+      position: { lat: 41.3744912, lon: 2.1487351 },
+      headingDeg: 60.4,
+    },
+    {
+      type: 'pedestrian-crossing',
+      position: { lat: 41.374952, lon: 2.1522473 },
+      headingDeg: 90.5,
+    },
+    {
+      type: 'speed-limit',
+      position: { lat: 41.3743389, lon: 2.1542999 },
+      headingDeg: 157.1,
+      valueKmh: 30,
+    },
+    {
+      type: 'pedestrian-crossing',
+      position: { lat: 41.374073, lon: 2.154531 },
+      headingDeg: 157.1,
+    },
+  ],
   maneuvers: [
+    {
+      type: 'traffic-light',
+      atWaypointIndex: 0,
+      description: "Semáforo de entrada a la rotonda de Plaça d'Espanya (Gran Via, lateral mar)",
+    },
+    {
+      type: 'traffic-light',
+      atWaypointIndex: 10,
+      description: 'Semáforo en el cruce de Avinguda del Paral·lel con Carrer de Lleida',
+    },
+    {
+      type: 'traffic-light',
+      atWaypointIndex: 12,
+      description: 'Semáforo en el cruce con Carrer de Tamarit',
+    },
+    {
+      type: 'give-way',
+      atWaypointIndex: 0,
+      description: 'Paso de peatones en la entrada a la rotonda desde Gran Via (lateral mar)',
+    },
+    {
+      type: 'give-way',
+      atWaypointIndex: 9,
+      description: 'Paso de peatones en Avinguda del Paral·lel',
+    },
+    {
+      type: 'give-way',
+      atWaypointIndex: 12,
+      description: 'Paso de peatones cerca de Carrer de Tamarit',
+    },
     {
       type: 'roundabout',
       atWaypointIndex: 4,
