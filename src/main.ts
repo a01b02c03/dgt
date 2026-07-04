@@ -14,6 +14,7 @@ import {
   roadWidthMAtSegment,
 } from './core/lanes';
 import { isLicenseActive, licenseStatusView } from './core/license';
+import type { DriveMode } from './core/drive-mode';
 import type { RouteDefinition } from './core/route-types';
 import { activateLicense, fetchSessionStatus, requestCheckout, validateLicense } from './license/api';
 import { getOrCreateDeviceId, readStoredLicense, writeStoredLicense } from './license/storage';
@@ -81,8 +82,8 @@ const engine = new Engine(canvas, true);
 
 /**
  * Panel de licencia Pro: no depende de Babylon/la escena, se inicializa aparte.
- * Hoy no gatea ninguna ruta (no existe contenido Pro todavía, ver CLAUDE.md) —
- * solo gestiona el ciclo compra → activación → estado mostrado.
+ * Gestiona el ciclo compra → activación → estado mostrado; el gate de rutas en
+ * sí vive en getAccessibleRoutes + el bootstrap de abajo (ver CLAUDE.md).
  */
 function initLicensePanel(): void {
   const deviceId = getOrCreateDeviceId();
@@ -150,7 +151,14 @@ function initLicensePanel(): void {
   }
 }
 
-function createScene(route: RouteDefinition): Scene {
+function createScene(route: RouteDefinition, mode: DriveMode): Scene {
+  // Circulación libre ('free', ver core/drive-mode.ts): el mundo simulado
+  // completo se mantiene — tráfico de IA, semáforos con su fase (los
+  // vehículos siguen frenando en rojo), peatones, colisiones y límites de
+  // calzada son conducción, no evaluación. Lo que se desactiva es solo la
+  // capa de examen: evaluadores, checklist del HUD, postes de maniobra y
+  // veredicto final.
+  const isExam = mode === 'exam';
   const scene = new Scene(engine);
 
   new HemisphericLight('light', new Vector3(0, 1, 0), scene);
@@ -335,7 +343,10 @@ function createScene(route: RouteDefinition): Scene {
     return index === -1 ? null : index;
   });
 
-  const maneuverMarkers = buildManeuverMarkers(route, origin, scene);
+  // Los postes de maniobra son capa de examen (reflejan ManeuverStatus); los
+  // marcadores de semáforo son mundo (fase real, la IA frena en rojo) y se
+  // construyen en ambos modos.
+  const maneuverMarkers = isExam ? buildManeuverMarkers(route, origin, scene) : [];
   const trafficLightMarkers = buildTrafficLightMarkers(route, origin, scene);
   let maneuverProgress = createManeuverProgress(route.maneuvers);
   let crossingState = createStopLineCrossingState(route.maneuvers.length);
@@ -345,8 +356,10 @@ function createScene(route: RouteDefinition): Scene {
   let roundaboutEvalState = createRoundaboutEvalState(route.maneuvers.length);
   let laneChangeEvalState = createLaneChangeEvalState(route.maneuvers.length);
 
-  const hud = buildHud(route.maneuvers);
-  maneuverProgress.forEach((entry, index) => hud.setManeuverState(index, maneuverChecklistLabel(entry)));
+  const hud = buildHud(isExam ? route.maneuvers : []);
+  if (isExam) {
+    maneuverProgress.forEach((entry, index) => hud.setManeuverState(index, maneuverChecklistLabel(entry)));
+  }
 
   const examResultScreen = buildExamResultScreen();
   const lastWaypointLocal = routePoints[routePoints.length - 1];
@@ -445,152 +458,158 @@ function createScene(route: RouteDefinition): Scene {
     const playerLaneCount = ownDirectionLaneCount(route.waypoints, bounds.segmentIndex);
     const playerLaneIndex = laneIndexFromLateralOffsetM(bounds.lateralOffsetM, playerLaneCount);
 
-    // Seguimiento de progreso de maniobras: solo registra métricas (todavía no
-    // evalúa si se ejecutaron correctamente, eso requiere criterios de examen).
-    const previousStatuses = maneuverProgress.map((entry) => entry.status);
-    maneuverProgress = updateManeuverProgress(maneuverProgress, routePoints, {
-      x: vehicleState.x,
-      z: vehicleState.z,
-      speedMs: vehicleState.speedMs,
-    });
-    maneuverProgress.forEach((entry, index) => {
-      if (entry.status === previousStatuses[index]) {
-        return;
-      }
-      const marker = maneuverMarkers[index];
-      marker.material.diffuseColor =
-        entry.status === 'active'
-          ? MANEUVER_ACTIVE_COLOR
-          : entry.status === 'completed'
-            ? MANEUVER_COMPLETED_COLOR
-            : MANEUVER_PENDING_COLOR;
-      hud.setManeuverState(index, maneuverChecklistLabel(entry));
-      console.log(`Maniobra "${entry.maneuver.description}": ${entry.status}`);
-    });
+    // Toda la capa de evaluación de examen (progreso de maniobras + los 6
+    // evaluadores) se salta entera en circulación libre — el resto del bucle
+    // (mundo simulado) es idéntico en ambos modos, ver core/drive-mode.ts.
+    if (isExam) {
+      // Seguimiento de progreso de maniobras: solo registra métricas (todavía no
+      // evalúa si se ejecutaron correctamente, eso requiere criterios de examen).
+      const previousStatuses = maneuverProgress.map((entry) => entry.status);
+      maneuverProgress = updateManeuverProgress(maneuverProgress, routePoints, {
+        x: vehicleState.x,
+        z: vehicleState.z,
+        speedMs: vehicleState.speedMs,
+      });
+      maneuverProgress.forEach((entry, index) => {
+        if (entry.status === previousStatuses[index]) {
+          return;
+        }
+        const marker = maneuverMarkers[index];
+        marker.material.diffuseColor =
+          entry.status === 'active'
+            ? MANEUVER_ACTIVE_COLOR
+            : entry.status === 'completed'
+              ? MANEUVER_COMPLETED_COLOR
+              : MANEUVER_PENDING_COLOR;
+        hud.setManeuverState(index, maneuverChecklistLabel(entry));
+        console.log(`Maniobra "${entry.maneuver.description}": ${entry.status}`);
+      });
 
-    // Evaluación pass/fail de maniobras traffic-light: instante de cruce de la
-    // línea de stop, criterio = fase del semáforo en ese instante (ver
-    // traffic-light-evaluator.ts para el porqué de no reevaluar más de una vez).
-    const previousOutcomes = maneuverProgress.map((entry) => entry.outcome);
-    const trafficLightResult = updateTrafficLightOutcomes(
-      maneuverProgress,
-      crossingState,
-      route.waypoints,
-      routePoints,
-      { x: vehicleState.x, z: vehicleState.z },
-      elapsedSimS,
-    );
-    maneuverProgress = trafficLightResult.progress;
-    crossingState = trafficLightResult.crossingState;
-    maneuverProgress.forEach((entry, index) => {
-      if (entry.outcome === previousOutcomes[index]) {
-        return;
-      }
-      hud.setManeuverState(index, maneuverChecklistLabel(entry));
-      console.log(`Maniobra "${entry.maneuver.description}": outcome ${entry.outcome}`);
-    });
+      // Evaluación pass/fail de maniobras traffic-light: instante de cruce de la
+      // línea de stop, criterio = fase del semáforo en ese instante (ver
+      // traffic-light-evaluator.ts para el porqué de no reevaluar más de una vez).
+      const previousOutcomes = maneuverProgress.map((entry) => entry.outcome);
+      const trafficLightResult = updateTrafficLightOutcomes(
+        maneuverProgress,
+        crossingState,
+        route.waypoints,
+        routePoints,
+        { x: vehicleState.x, z: vehicleState.z },
+        elapsedSimS,
+      );
+      maneuverProgress = trafficLightResult.progress;
+      crossingState = trafficLightResult.crossingState;
+      maneuverProgress.forEach((entry, index) => {
+        if (entry.outcome === previousOutcomes[index]) {
+          return;
+        }
+        hud.setManeuverState(index, maneuverChecklistLabel(entry));
+        console.log(`Maniobra "${entry.maneuver.description}": outcome ${entry.outcome}`);
+      });
 
-    // Evaluación pass/fail de maniobras give-way: mismo evento de cruce de
-    // línea que traffic-light (ver give-way-evaluator.ts), pero el criterio es
-    // si hay algo obstruyendo en el instante de cruce — un peatón sobre la
-    // calzada (giveWayPedestrianIndices, ver arriba, usa el estado del frame
-    // anterior, mismo patrón de snapshot que el resto de la IA de tráfico) o
-    // un vehículo de tráfico transversal ocupando el cruce
-    // (giveWayCrossTrafficIndices, ver arriba; siempre null en ruta-01 hoy).
-    const previousGiveWayOutcomes = maneuverProgress.map((entry) => entry.outcome);
-    const giveWayObstructed = route.maneuvers.map((_maneuver, index) => {
-      const pedestrianIndex = giveWayPedestrianIndices[index];
-      const obstructedByPedestrian =
-        pedestrianIndex !== null &&
-        isPedestrianInRoadway(pedestrians[pedestrianIndex].state, pedestrians[pedestrianIndex].roadHalfWidthM);
-      const crossTrafficIndex = giveWayCrossTrafficIndices[index];
-      const obstructedByCrossTraffic = crossTrafficIndex !== null && crossTrafficStates[crossTrafficIndex].onCrossing;
-      return obstructedByPedestrian || obstructedByCrossTraffic;
-    });
-    const giveWayResult = updateGiveWayOutcomes(
-      maneuverProgress,
-      giveWayEvalState,
-      route.waypoints,
-      routePoints,
-      { x: vehicleState.x, z: vehicleState.z },
-      giveWayObstructed,
-    );
-    maneuverProgress = giveWayResult.progress;
-    giveWayEvalState = giveWayResult.evalState;
-    maneuverProgress.forEach((entry, index) => {
-      if (entry.outcome === previousGiveWayOutcomes[index]) {
-        return;
-      }
-      hud.setManeuverState(index, maneuverChecklistLabel(entry));
-      console.log(`Maniobra "${entry.maneuver.description}": outcome ${entry.outcome}`);
-    });
+      // Evaluación pass/fail de maniobras give-way: mismo evento de cruce de
+      // línea que traffic-light (ver give-way-evaluator.ts), pero el criterio es
+      // si hay algo obstruyendo en el instante de cruce — un peatón sobre la
+      // calzada (giveWayPedestrianIndices, ver arriba, usa el estado del frame
+      // anterior, mismo patrón de snapshot que el resto de la IA de tráfico) o
+      // un vehículo de tráfico transversal ocupando el cruce
+      // (giveWayCrossTrafficIndices, ver arriba; siempre null en ruta-01 hoy).
+      const previousGiveWayOutcomes = maneuverProgress.map((entry) => entry.outcome);
+      const giveWayObstructed = route.maneuvers.map((_maneuver, index) => {
+        const pedestrianIndex = giveWayPedestrianIndices[index];
+        const obstructedByPedestrian =
+          pedestrianIndex !== null &&
+          isPedestrianInRoadway(pedestrians[pedestrianIndex].state, pedestrians[pedestrianIndex].roadHalfWidthM);
+        const crossTrafficIndex = giveWayCrossTrafficIndices[index];
+        const obstructedByCrossTraffic = crossTrafficIndex !== null && crossTrafficStates[crossTrafficIndex].onCrossing;
+        return obstructedByPedestrian || obstructedByCrossTraffic;
+      });
+      const giveWayResult = updateGiveWayOutcomes(
+        maneuverProgress,
+        giveWayEvalState,
+        route.waypoints,
+        routePoints,
+        { x: vehicleState.x, z: vehicleState.z },
+        giveWayObstructed,
+      );
+      maneuverProgress = giveWayResult.progress;
+      giveWayEvalState = giveWayResult.evalState;
+      maneuverProgress.forEach((entry, index) => {
+        if (entry.outcome === previousGiveWayOutcomes[index]) {
+          return;
+        }
+        hud.setManeuverState(index, maneuverChecklistLabel(entry));
+        console.log(`Maniobra "${entry.maneuver.description}": outcome ${entry.outcome}`);
+      });
 
-    // Evaluación pass/fail de maniobras u-turn, parallel-park y roundabout:
-    // ver u-turn-evaluator.ts / parallel-park-evaluator.ts /
-    // roundabout-evaluator.ts para el criterio de cada una. Ninguna ruta
-    // instancia todavía estos tipos de maniobra (ver CLAUDE.md), así que
-    // estas llamadas no tienen efecto visible hoy.
-    const previousUTurnParkOutcomes = maneuverProgress.map((entry) => entry.outcome);
-    const uTurnResult = updateUTurnOutcomes(
-      maneuverProgress,
-      uTurnEvalState,
-      { headingRad: vehicleState.headingRad },
-      bounds.onRoad,
-      anyCollision,
-    );
-    maneuverProgress = uTurnResult.progress;
-    uTurnEvalState = uTurnResult.evalState;
-    const parallelParkResult = updateParallelParkOutcomes(
-      maneuverProgress,
-      parallelParkEvalState,
-      route.waypoints,
-      routePoints,
-      { x: vehicleState.x, z: vehicleState.z, headingRad: vehicleState.headingRad, speedMs: vehicleState.speedMs },
-      bounds.onRoad,
-      anyCollision,
-    );
-    maneuverProgress = parallelParkResult.progress;
-    parallelParkEvalState = parallelParkResult.evalState;
-    const roundaboutResult = updateRoundaboutOutcomes(
-      maneuverProgress,
-      roundaboutEvalState,
-      { headingRad: vehicleState.headingRad, speedMs: vehicleState.speedMs },
-      bounds.onRoad,
-      anyCollision,
-    );
-    maneuverProgress = roundaboutResult.progress;
-    roundaboutEvalState = roundaboutResult.evalState;
-    maneuverProgress.forEach((entry, index) => {
-      if (entry.outcome === previousUTurnParkOutcomes[index]) {
-        return;
-      }
-      hud.setManeuverState(index, maneuverChecklistLabel(entry));
-      console.log(`Maniobra "${entry.maneuver.description}": outcome ${entry.outcome}`);
-    });
+      // Evaluación pass/fail de maniobras u-turn, parallel-park y roundabout:
+      // ver u-turn-evaluator.ts / parallel-park-evaluator.ts /
+      // roundabout-evaluator.ts para el criterio de cada una. ruta-02 instancia
+      // roundabout y parallel-park (ver CLAUDE.md); u-turn sigue sin ninguna
+      // maniobra instanciada en ninguna ruta, así que esa llamada concreta no
+      // tiene efecto visible hoy.
+      const previousUTurnParkOutcomes = maneuverProgress.map((entry) => entry.outcome);
+      const uTurnResult = updateUTurnOutcomes(
+        maneuverProgress,
+        uTurnEvalState,
+        { headingRad: vehicleState.headingRad },
+        bounds.onRoad,
+        anyCollision,
+      );
+      maneuverProgress = uTurnResult.progress;
+      uTurnEvalState = uTurnResult.evalState;
+      const parallelParkResult = updateParallelParkOutcomes(
+        maneuverProgress,
+        parallelParkEvalState,
+        route.waypoints,
+        routePoints,
+        { x: vehicleState.x, z: vehicleState.z, headingRad: vehicleState.headingRad, speedMs: vehicleState.speedMs },
+        bounds.onRoad,
+        anyCollision,
+      );
+      maneuverProgress = parallelParkResult.progress;
+      parallelParkEvalState = parallelParkResult.evalState;
+      const roundaboutResult = updateRoundaboutOutcomes(
+        maneuverProgress,
+        roundaboutEvalState,
+        { headingRad: vehicleState.headingRad, speedMs: vehicleState.speedMs },
+        bounds.onRoad,
+        anyCollision,
+      );
+      maneuverProgress = roundaboutResult.progress;
+      roundaboutEvalState = roundaboutResult.evalState;
+      maneuverProgress.forEach((entry, index) => {
+        if (entry.outcome === previousUTurnParkOutcomes[index]) {
+          return;
+        }
+        hud.setManeuverState(index, maneuverChecklistLabel(entry));
+        console.log(`Maniobra "${entry.maneuver.description}": outcome ${entry.outcome}`);
+      });
 
-    // Evaluación pass/fail de maniobras lane-change (ver
-    // lane-change-evaluator.ts): criterio = el carril de salida es distinto y
-    // adyacente al de entrada, sin salir de calzada ni colisionar. A
-    // diferencia de u-turn/parallel-park/roundabout de arriba, ruta-01 ya
-    // instancia una de estas (wp2, ver CLAUDE.md) gracias al ownDirectionLanes
-    // real verificado en cada tramo de Carrer de la Marina.
-    const previousLaneChangeOutcomes = maneuverProgress.map((entry) => entry.outcome);
-    const laneChangeResult = updateLaneChangeOutcomes(
-      maneuverProgress,
-      laneChangeEvalState,
-      { laneIndex: playerLaneIndex },
-      bounds.onRoad,
-      anyCollision,
-    );
-    maneuverProgress = laneChangeResult.progress;
-    laneChangeEvalState = laneChangeResult.evalState;
-    maneuverProgress.forEach((entry, index) => {
-      if (entry.outcome === previousLaneChangeOutcomes[index]) {
-        return;
-      }
-      hud.setManeuverState(index, maneuverChecklistLabel(entry));
-      console.log(`Maniobra "${entry.maneuver.description}": outcome ${entry.outcome}`);
-    });
+      // Evaluación pass/fail de maniobras lane-change (ver
+      // lane-change-evaluator.ts): criterio = el carril de salida es distinto y
+      // adyacente al de entrada, sin salir de calzada ni colisionar. A
+      // diferencia de u-turn/parallel-park/roundabout de arriba, ruta-01 ya
+      // instancia una de estas (wp2, ver CLAUDE.md) gracias al ownDirectionLanes
+      // real verificado en cada tramo de Carrer de la Marina.
+      const previousLaneChangeOutcomes = maneuverProgress.map((entry) => entry.outcome);
+      const laneChangeResult = updateLaneChangeOutcomes(
+        maneuverProgress,
+        laneChangeEvalState,
+        { laneIndex: playerLaneIndex },
+        bounds.onRoad,
+        anyCollision,
+      );
+      maneuverProgress = laneChangeResult.progress;
+      laneChangeEvalState = laneChangeResult.evalState;
+      maneuverProgress.forEach((entry, index) => {
+        if (entry.outcome === previousLaneChangeOutcomes[index]) {
+          return;
+        }
+        hud.setManeuverState(index, maneuverChecklistLabel(entry));
+        console.log(`Maniobra "${entry.maneuver.description}": outcome ${entry.outcome}`);
+      });
+    }
 
     // Semáforos: recoloreado continuo (no solo en transición), según la fase actual.
     trafficLightMarkers.forEach((marker) => {
@@ -760,16 +779,20 @@ function createScene(route: RouteDefinition): Scene {
     // Veredicto agregado del examen (ver core/exam-result.ts): 'fail' en cuanto
     // cualquier maniobra falla, 'pass' solo al llegar al final de la ruta sin
     // fallos. reachedFinish es "pegajoso" (una vez true, no vuelve a false) para
-    // no parpadear si el vehículo se aleja del último waypoint tras llegar.
-    reachedFinish = reachedFinish || hasReachedFinish({ x: vehicleState.x, z: vehicleState.z }, lastWaypointLocal);
-    const outcome = examOutcome(maneuverProgress, reachedFinish);
-    if (outcome !== null && outcome !== examOutcomeShown) {
-      examOutcomeShown = outcome;
-      examResultScreen.show(
-        outcome,
-        maneuverProgress.map((entry) => maneuverChecklistLabel(entry)),
-      );
-      console.log(`Examen finalizado: ${outcome === 'pass' ? 'Apto' : 'No apto'}`);
+    // no parpadear si el vehículo se aleja del último waypoint tras llegar. En
+    // circulación libre no hay veredicto: llegar al final no termina nada, se
+    // puede seguir conduciendo (y volver atrás) indefinidamente.
+    if (isExam) {
+      reachedFinish = reachedFinish || hasReachedFinish({ x: vehicleState.x, z: vehicleState.z }, lastWaypointLocal);
+      const outcome = examOutcome(maneuverProgress, reachedFinish);
+      if (outcome !== null && outcome !== examOutcomeShown) {
+        examOutcomeShown = outcome;
+        examResultScreen.show(
+          outcome,
+          maneuverProgress.map((entry) => maneuverChecklistLabel(entry)),
+        );
+        console.log(`Examen finalizado: ${outcome === 'pass' ? 'Apto' : 'No apto'}`);
+      }
     }
   });
 
@@ -790,8 +813,8 @@ initLicensePanel();
 const hasProAccess = isLicenseActive(readStoredLicense(), Date.now());
 const accessibleRoutes = getAccessibleRoutes(hasProAccess);
 
-function startScene(route: RouteDefinition): void {
-  const scene = createScene(route);
+function startScene(route: RouteDefinition, mode: DriveMode): void {
+  const scene = createScene(route, mode);
   engine.runRenderLoop(() => {
     scene.render();
   });
@@ -800,11 +823,15 @@ function startScene(route: RouteDefinition): void {
 if (accessibleRoutes.length <= 1) {
   const [route] = accessibleRoutes;
   if (route) {
-    startScene(route);
+    startScene(route, 'exam');
   }
 } else {
+  // La circulación libre es la feature Pro (ver core/drive-mode.ts) — se
+  // ofrece como segundo modo por ruta solo con acceso Pro. Hoy el selector
+  // solo aparece con acceso Pro de todas formas (más de una ruta accesible
+  // implica licencia activa), pero el flag mantiene el gate explícito.
   const routeSelectScreen = buildRouteSelectScreen();
-  routeSelectScreen.show(accessibleRoutes, startScene);
+  routeSelectScreen.show(accessibleRoutes, startScene, hasProAccess);
 }
 
 window.addEventListener('resize', () => {

@@ -251,7 +251,16 @@ despliegue en Freehostia (PHP 8.4 + MySQL 8) y el contrato de los 5 endpoints.
   propia validación de `initLicensePanel()` no interrumpe la escena hoy). Con una sola ruta accesible
   (el caso de un usuario gratuito) se entra directo, sin selector — el selector
   (`buildRouteSelectScreen`, mismo patrón que `exam-result-screen.ts`) solo aparece si hay más de una.
-  `createScene(route)` recibe la ruta ya elegida en vez de decidir internamente.
+  `createScene(route, mode)` recibe la ruta y el modo ya elegidos en vez de decidir internamente.
+- **Circulación libre** (`src/core/drive-mode.ts`, `DriveMode = 'exam' | 'free'`): la feature Pro de
+  conducir una ruta sin examen. En `'free'` el mundo simulado completo se mantiene (tráfico de IA,
+  semáforos con su fase y la IA frenando en rojo, peatones, colisiones físicas, límites de calzada)
+  porque es conducción, no evaluación; se desactiva solo la capa de examen: los 6 evaluadores de
+  maniobra, el checklist del HUD, los postes de maniobra (`maneuver-markers.ts` — los marcadores de
+  semáforo sí se construyen, son mundo) y el veredicto/pantalla final. Llegar al último waypoint no
+  termina nada. El modo se elige en el selector de ruta (botones "Examen" / "Circulación libre" por
+  ruta cuando `hasProAccess`); un usuario gratuito entra directo a su única ruta en `'exam'`, sin
+  selector, como siempre.
 - **Límite deliberado**: el gate protege el frontend (build estático) llamando a estos endpoints;
   alguien técnico podría eludirlo. Es un límite blando, igual que el `deviceId` en `localStorage`
   (no es DRM real). No sobre-diseñar esto más allá de lo que ya hay.
@@ -298,7 +307,11 @@ confirmado por una señal R-301_30 real y por el tag `zone:maxspeed=30` de OSM e
 El interior de la propia rotonda (wp1, wp3-wp8) queda deliberadamente sin resolver: tiene elementos
 semafóricos reales cerca pero pertenecen a la regulación de un nudo de muchos brazos y no se pudo
 aislar qué fase gobierna cada punto del anillo — ver el comentario de cabecera de `route.ts` para
-el detalle de qué se descartó y por qué.
+el detalle de qué se descartó y por qué. **Circulación libre Pro** (2026-07-04, ver "Gate de
+licencia Pro" arriba): modo `'free'` en `createScene(route, mode)` — mundo simulado intacto, capa
+de examen desactivada, elegible por ruta en el selector con acceso Pro. Verificado en vivo en el
+navegador: cero eventos de maniobra conduciendo por puntos que en `'exam'` evalúan de inmediato, y
+el modo examen intacto en la misma build.
 
 **No implementado todavía**:
 - `u-turn` tiene criterio de evaluación (ver arriba) pero ninguna ruta real instancia todavía una
@@ -307,8 +320,6 @@ el detalle de qué se descartó y por qué.
   cinemático, decisión deliberada hasta ahora, no una limitación técnica descubierta.
 - Verificación del checkout de Stripe contra la API real (hoy solo probado con un fake HTTP
   inyectado en los tests del backend).
-- Circulación libre de la versión Pro — el gate de licencia ya gatea una ruta real (`ruta-02`), pero
-  no hay circulación libre todavía.
 
 **Investigado y descartado**: el defecto cosmético de triangulación del techo (roof cap) que este
 documento reportaba antes en edificios de huella compleja (p. ej. `osm-120022089`, por sospecha de
