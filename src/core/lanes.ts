@@ -38,6 +38,25 @@ export function ownDirectionLaneCount(waypoints: Waypoint[], segmentIndex: numbe
   return (waypoints[segmentIndex] ?? waypoints[0]).ownDirectionLanes;
 }
 
+/**
+ * Ancho total de calzada del tramo que empieza en `waypoints[segmentIndex]`:
+ * un bloque de LANE_WIDTH_M por cada carril del propio sentido
+ * (ownDirectionLaneCount) más, solo si el tramo es de doble sentido
+ * (isTwoWaySegment), un único carril más para el sentido contrario — que
+ * siempre se modela con un carril fijo, ver `OncomingRoute` más abajo. Usado
+ * por road-mesh.ts (ancho visual de la cinta) y road-bounds.ts (umbral de
+ * salida de calzada) para no asumir un ROAD_WIDTH_M fijo en toda la ruta: con
+ * `ownDirectionLanes: 1` en todos los waypoints (caso de ruta-01 hoy, ver
+ * CLAUDE.md) da 6m en los tramos de doble sentido y 3m en los de sentido
+ * único, coherente con LANE_OFFSET_M/ROAD_WIDTH_M de antes de existir este
+ * modelo.
+ */
+export function roadWidthMAtSegment(waypoints: Waypoint[], segmentIndex: number): number {
+  const laneCount = ownDirectionLaneCount(waypoints, segmentIndex);
+  const oncomingLanes = isTwoWaySegment(waypoints, segmentIndex) ? 1 : 0;
+  return (laneCount + oncomingLanes) * LANE_WIDTH_M;
+}
+
 /** Recorta un índice de carril al rango disponible [0, laneCount - 1] — p. ej. si el tramo actual tiene menos carriles que donde arrancó el vehículo. */
 export function clampLaneIndex(laneIndex: number, laneCount: number): number {
   return Math.min(Math.max(laneIndex, 0), laneCount - 1);

@@ -125,12 +125,21 @@ jugador (que se mueve libre en 2D, no por carril fijo) se deriva de su desplazam
 tiene hoy más de un carril por sentido** (`ruta-01` tiene `ownDirectionLanes: 1` en todos sus
 waypoints, ver el comentario de cabecera de `route.ts`), así que este modelo se comporta hoy
 exactamente igual que el carril único de antes — infraestructura lista para una ruta futura, mismo
-patrón que `roundabout` (ver arriba). **Limitación conocida, deliberadamente no resuelta todavía**:
-`road-mesh.ts` (ancho visual de la calzada) y `road-bounds.ts` (detección de salida de calzada)
-siguen usando `ROAD_WIDTH_M` fijo y simétrico, no lo derivan de `ownDirectionLanes` — si una ruta
-futura usa más de un carril por sentido, habrá que ampliar ambos antes de que se vea/detecte
-correctamente. **No habilita `lane-change` todavía**: el modelo existe pero no hay ninguna ruta con
-un tramo real de varios carriles sobre el que anclar la maniobra (ver arriba).
+patrón que `roundabout` (ver arriba). `road-mesh.ts` (ancho visual de la calzada) y
+`road-bounds.ts` (detección de salida de calzada) ya derivan el ancho de `ownDirectionLanes` en vez
+de un `ROAD_WIDTH_M` fijo: `roadWidthMAtSegment` (`core/lanes.ts`) calcula, por tramo, `carriles del
+propio sentido × LANE_WIDTH_M` más un carril más de sentido contrario si `twoWay` — la misma cinta
+(`road-mesh.ts`) se estrecha/ensancha exactamente en los waypoints donde cambia `twoWay`/
+`ownDirectionLanes`, y `queryRoadBounds` (`core/road-bounds.ts`) recibe ahora una función
+`(segmentIndex) => anchoM` en vez de un número, consultada solo con el segmento ya elegido (la
+búsqueda del segmento más cercano sigue siendo puramente geométrica). En `ruta-01` esto ya cambia el
+comportamiento visible: el tramo de sentido único (wp3 en adelante) pasa de 6m a 3m de ancho — antes
+`ROAD_WIDTH_M` se aplicaba de forma uniforme en toda la ruta sin distinguir `twoWay`. El ancho por el
+que cruzan los peatones (`PEDESTRIAN_CROSSING_MARGIN_M` en `main.ts`) también se deriva ahora por
+cruce (antes un valor global compartido), para no desalinear a los peatones de wp5/wp6 (en el tramo
+más estrecho) respecto a la nueva calzada. **No habilita `lane-change` todavía**: el modelo existe
+pero no hay ninguna ruta con un tramo real de varios carriles sobre el que anclar la maniobra (ver
+arriba).
 
 **Peatones** (`pedestrian-ai.ts`): un peatón por cada `SignPlacement` de tipo `pedestrian-crossing`
 de la ruta, cruzando en línea recta perpendicular a la calzada en ese punto (`pedestrianPose`),
@@ -252,9 +261,6 @@ arriba), sin nada Pro que gatear todavía.
   tipos con criterio, solo `traffic-light` y `give-way` se usan en una ruta real hoy.
 - Físicas de vehículo "de verdad" (motor de físicas de Babylon) — el controlador actual es
   cinemático, decisión deliberada hasta ahora, no una limitación técnica descubierta.
-- `road-mesh.ts`/`road-bounds.ts` con ancho de calzada derivado de `ownDirectionLanes` en vez de
-  `ROAD_WIDTH_M` fijo — necesario antes de que una ruta con varios carriles se vea/detecte
-  correctamente (ver "IA de tráfico" arriba).
 - Cruces con prioridad entre el tráfico de IA de distintas calles (solo hay cesión de paso a
   peatones, ver arriba; tampoco hay tráfico de IA en calles transversales todavía) — **bloqueado
   en `ruta-01` hoy**: ver "Investigado y descartado" abajo, no hay ningún cruce sin semaforizar

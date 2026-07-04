@@ -1,7 +1,5 @@
 import type { LocalPoint } from './geo';
 
-export const ROAD_WIDTH_M = 6;
-
 export interface RoadBoundsQuery {
   /** Distancia absoluta al eje de la calzada, en metros. */
   distanceFromCenterM: number;
@@ -18,10 +16,15 @@ export interface RoadBoundsQuery {
  * los segmentos consecutivos de `centerline`. Para cada segmento se proyecta el
  * punto y se recorta al propio segmento (no a la recta infinita), y se toma el
  * segmento con menor distancia — necesario para trazados con curvas/cruces.
+ *
+ * `roadWidthMAt` se consulta solo con el segmentIndex ya elegido (la búsqueda
+ * del segmento más cercano es puramente geométrica, no depende del ancho) —
+ * así el ancho puede variar por tramo (ver roadWidthMAtSegment en lanes.ts)
+ * sin que esta función necesite saber nada de carriles/sentido único.
  */
 export function queryRoadBounds(
   centerline: LocalPoint[],
-  roadWidthM: number,
+  roadWidthMAt: (segmentIndex: number) => number,
   position: LocalPoint,
 ): RoadBoundsQuery {
   let bestDistance = Infinity;
@@ -56,7 +59,7 @@ export function queryRoadBounds(
     }
   }
 
-  const halfWidth = roadWidthM / 2;
+  const halfWidth = roadWidthMAt(bestSegmentIndex) / 2;
   return {
     distanceFromCenterM: bestDistance,
     lateralOffsetM: bestLateral,

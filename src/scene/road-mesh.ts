@@ -1,19 +1,21 @@
 import { Color3, Mesh, MeshBuilder, type Scene, StandardMaterial, Vector3 } from '@babylonjs/core';
 import { toLocalMeters } from '../core/geo';
-import { ROAD_WIDTH_M } from '../core/road-bounds';
+import { roadWidthMAtSegment } from '../core/lanes';
 import type { GeoPoint, RouteDefinition } from '../core/route-types';
 
 /**
  * Construye la calzada como una cinta (ribbon) siguiendo los waypoints de la ruta:
  * en cada punto se calcula la normal del trazado (perpendicular a la dirección
  * prev->next) para desplazar el borde izquierdo/derecho medio ancho de calzada.
+ * El ancho en cada punto es el del tramo que empieza en ese waypoint
+ * (roadWidthMAtSegment, ver core/lanes.ts), así que la cinta se estrecha o
+ * ensancha exactamente en los waypoints donde cambia twoWay/ownDirectionLanes.
  */
 export function buildRoadMesh(route: RouteDefinition, origin: GeoPoint, scene: Scene): Mesh {
   const points = route.waypoints.map((waypoint) => toLocalMeters(origin, waypoint.position));
 
   const left: Vector3[] = [];
   const right: Vector3[] = [];
-  const halfWidth = ROAD_WIDTH_M / 2;
 
   for (let i = 0; i < points.length; i++) {
     const prev = points[Math.max(i - 1, 0)];
@@ -23,6 +25,7 @@ export function buildRoadMesh(route: RouteDefinition, origin: GeoPoint, scene: S
     const length = Math.hypot(dx, dz) || 1;
     const normalX = -dz / length;
     const normalZ = dx / length;
+    const halfWidth = roadWidthMAtSegment(route.waypoints, i) / 2;
 
     const point = points[i];
     left.push(new Vector3(point.x - normalX * halfWidth, 0, point.z - normalZ * halfWidth));

@@ -11,6 +11,7 @@ import {
   mirroredArcLengthOfWaypoint,
   offsetPoseToLane,
   ownDirectionLaneCount,
+  roadWidthMAtSegment,
 } from './core/lanes';
 import { licenseStatusView } from './core/license';
 import { activateLicense, fetchSessionStatus, requestCheckout, validateLicense } from './license/api';
@@ -28,7 +29,7 @@ import {
   pedestrianPose,
   stepPedestrian,
 } from './core/pedestrian-ai';
-import { queryRoadBounds, ROAD_WIDTH_M } from './core/road-bounds';
+import { queryRoadBounds } from './core/road-bounds';
 import { getTrafficLightPhase } from './core/traffic-light';
 import { createStopLineCrossingState, updateTrafficLightOutcomes } from './core/traffic-light-evaluator';
 import {
@@ -157,6 +158,9 @@ function createScene(): Scene {
   buildBuildingMeshes(buildings, origin, scene);
 
   const routePoints = freeRoute.waypoints.map((waypoint) => toLocalMeters(origin, waypoint.position));
+  // Ancho de calzada por tramo (ver roadWidthMAtSegment en core/lanes.ts), no
+  // un ROAD_WIDTH_M fijo: coherente con el ancho visual de road-mesh.ts.
+  const roadWidthMAt = (segmentIndex: number) => roadWidthMAtSegment(freeRoute.waypoints, segmentIndex);
   const buildingShapes = buildings.map((building) => ({
     id: building.id,
     footprint: building.footprint.map((corner) => toLocalMeters(origin, corner)),
@@ -219,7 +223,7 @@ function createScene(): Scene {
     const { mesh, bodyMaterial } = buildVehicleMesh(scene);
     bodyMaterial.diffuseColor = AI_VEHICLE_COLOR;
     const centerPose = poseAtArcLength(routePoints, arcLengthTable, offsetM);
-    const spawnSegmentIndex = queryRoadBounds(routePoints, ROAD_WIDTH_M, centerPose).segmentIndex;
+    const spawnSegmentIndex = queryRoadBounds(routePoints, roadWidthMAt, centerPose).segmentIndex;
     const laneCount = ownDirectionLaneCount(freeRoute.waypoints, spawnSegmentIndex);
     const laneIndex = index % laneCount;
     const pose = offsetPoseToLane(centerPose, laneOffsetM(laneIndex, laneCount));
@@ -255,20 +259,25 @@ function createScene(): Scene {
   // uno arranca desfasado según su índice de aparición (pedestrianPhaseOffsetS,
   // mismo patrón que trafficLightPhaseOffsetS) para que no crucen todos
   // sincronizados — el estado inicial se adelanta ese desfase con
-  // advancePedestrian antes del primer frame.
-  const pedestrianCrossingHalfWidthM = ROAD_WIDTH_M / 2 + PEDESTRIAN_CROSSING_MARGIN_M;
+  // advancePedestrian antes del primer frame. El ancho de calzada que cruza
+  // cada uno es el de su propio tramo (roadWidthMAt), no un ROAD_WIDTH_M fijo
+  // — necesario porque wp5/wp6 de ruta-01 caen en el tramo de sentido único,
+  // más estrecho que el tramo de doble sentido donde está wp1.
   const pedestrians = freeRoute.signs
     .filter((sign) => sign.type === 'pedestrian-crossing')
     .map((sign, index) => {
       const crossing = { position: toLocalMeters(origin, sign.position), headingDeg: sign.headingDeg };
+      const crossingSegmentIndex = queryRoadBounds(routePoints, roadWidthMAt, crossing.position).segmentIndex;
+      const roadHalfWidthM = roadWidthMAt(crossingSegmentIndex) / 2;
+      const crossingHalfWidthM = roadHalfWidthM + PEDESTRIAN_CROSSING_MARGIN_M;
       const { mesh } = buildPedestrianMesh(scene);
-      const initialState = createPedestrianState(-pedestrianCrossingHalfWidthM);
-      const state = advancePedestrian(initialState, pedestrianCrossingHalfWidthM, pedestrianPhaseOffsetS(index));
+      const initialState = createPedestrianState(-crossingHalfWidthM);
+      const state = advancePedestrian(initialState, crossingHalfWidthM, pedestrianPhaseOffsetS(index));
       const pose = pedestrianPose(crossing, state);
       mesh.position.x = pose.x;
       mesh.position.z = pose.z;
       mesh.rotation.y = pose.headingRad;
-      return { mesh, crossing, state };
+      return { mesh, crossing, state, roadHalfWidthM, crossingHalfWidthM };
     });
 
   // Emparejamiento maniobra 'give-way' -> peatón más cercano a su waypoint,
@@ -366,7 +375,7 @@ function createScene(): Scene {
 
     // Deteccion de limites de calzada: no bloquea el movimiento, solo lo registra
     // (base para puntuar faltas de trazado en la evaluacion del examen).
-    const bounds = queryRoadBounds(routePoints, ROAD_WIDTH_M, vehicleState);
+    const bounds = queryRoadBounds(routePoints, roadWidthMAt, vehicleState);
     if (bounds.onRoad !== wasOnRoad) {
       vehicleBodyMaterial.diffuseColor = bounds.onRoad ? VEHICLE_ON_ROAD_COLOR : VEHICLE_OFF_ROAD_COLOR;
       console.log(bounds.onRoad ? 'Vehículo dentro de la calzada' : 'Vehículo fuera de la calzada');
@@ -429,7 +438,10 @@ function createScene(): Scene {
     const previousGiveWayOutcomes = maneuverProgress.map((entry) => entry.outcome);
     const giveWayObstructed = freeRoute.maneuvers.map((_maneuver, index) => {
       const pedestrianIndex = giveWayPedestrianIndices[index];
-      return pedestrianIndex !== null && isPedestrianInRoadway(pedestrians[pedestrianIndex].state, ROAD_WIDTH_M / 2);
+      return (
+        pedestrianIndex !== null &&
+        isPedestrianInRoadway(pedestrians[pedestrianIndex].state, pedestrians[pedestrianIndex].roadHalfWidthM)
+      );
     });
     const giveWayResult = updateGiveWayOutcomes(
       maneuverProgress,
@@ -504,7 +516,7 @@ function createScene(): Scene {
     // un semáforo en rojo, usando su posición del frame anterior (mismo
     // patrón de snapshot que aiArcsBeforeStep) — se actualizan más abajo.
     const blockingPedestrianForwardArcs = pedestrians
-      .filter((pedestrian) => isPedestrianInRoadway(pedestrian.state, ROAD_WIDTH_M / 2))
+      .filter((pedestrian) => isPedestrianInRoadway(pedestrian.state, pedestrian.roadHalfWidthM))
       .map((pedestrian) => estimateArcLength(routePoints, arcLengthTable, pedestrian.crossing.position));
 
     // Tráfico de IA: cada vehículo frena ante semáforos en rojo por delante,
@@ -535,7 +547,7 @@ function createScene(): Scene {
       ];
       const leadArcM = leadVehicleArcM(vehicle.laneIndex, vehicle.state.distanceAlongRouteM, others);
 
-      const aiBounds = queryRoadBounds(routePoints, ROAD_WIDTH_M, {
+      const aiBounds = queryRoadBounds(routePoints, roadWidthMAt, {
         x: vehicle.mesh.position.x,
         z: vehicle.mesh.position.z,
       });
@@ -583,7 +595,7 @@ function createScene(): Scene {
     // distancia acumulada invertida de oncomingRoute (ver estimateArcLength
     // en traffic-ai.ts, genérica sobre cualquier lista de puntos ordenada).
     const blockingPedestrianMirroredArcs = pedestrians
-      .filter((pedestrian) => isPedestrianInRoadway(pedestrian.state, ROAD_WIDTH_M / 2))
+      .filter((pedestrian) => isPedestrianInRoadway(pedestrian.state, pedestrian.roadHalfWidthM))
       .filter(
         (pedestrian) =>
           estimateArcLength(routePoints, arcLengthTable, pedestrian.crossing.position) <=
@@ -610,7 +622,7 @@ function createScene(): Scene {
       const arcsAhead = otherArcs.filter((arc) => arc > vehicle.state.distanceAlongRouteM);
       const leadArcM = arcsAhead.length > 0 ? Math.min(...arcsAhead) : null;
 
-      const oncomingBounds = queryRoadBounds(routePoints, ROAD_WIDTH_M, {
+      const oncomingBounds = queryRoadBounds(routePoints, roadWidthMAt, {
         x: vehicle.mesh.position.x,
         z: vehicle.mesh.position.z,
       });
@@ -656,7 +668,7 @@ function createScene(): Scene {
     // give-way asociada se marca 'fail' si el jugador cruza su línea con el
     // peatón todavía en calzada (ver give-way-evaluator.ts).
     pedestrians.forEach((pedestrian) => {
-      pedestrian.state = stepPedestrian(pedestrian.state, pedestrianCrossingHalfWidthM, dtSeconds);
+      pedestrian.state = stepPedestrian(pedestrian.state, pedestrian.crossingHalfWidthM, dtSeconds);
       const pose = pedestrianPose(pedestrian.crossing, pedestrian.state);
       pedestrian.mesh.position.x = pose.x;
       pedestrian.mesh.position.z = pose.z;

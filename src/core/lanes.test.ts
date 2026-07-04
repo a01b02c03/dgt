@@ -10,6 +10,7 @@ import {
   mirroredArcLengthOfWaypoint,
   offsetPoseToLane,
   ownDirectionLaneCount,
+  roadWidthMAtSegment,
 } from './lanes';
 import type { Waypoint } from './route-types';
 
@@ -102,6 +103,34 @@ describe('ownDirectionLaneCount', () => {
     const waypoints = [waypoint(true, 1), waypoint(true, 2), waypoint(false, 1)];
     expect(ownDirectionLaneCount(waypoints, 1)).toBe(2);
     expect(ownDirectionLaneCount(waypoints, 2)).toBe(1);
+  });
+});
+
+describe('roadWidthMAtSegment', () => {
+  it('matches the legacy fixed ROAD_WIDTH_M for a single-lane two-way segment', () => {
+    const waypoints = [waypoint(true, 1)];
+    expect(roadWidthMAtSegment(waypoints, 0)).toBe(6);
+  });
+
+  it('halves for a single-lane one-way segment (no oncoming lane)', () => {
+    const waypoints = [waypoint(false, 1)];
+    expect(roadWidthMAtSegment(waypoints, 0)).toBe(3);
+  });
+
+  it('adds one lane width per extra own-direction lane', () => {
+    const waypoints = [waypoint(false, 2)];
+    expect(roadWidthMAtSegment(waypoints, 0)).toBe(6);
+  });
+
+  it('adds the oncoming lane on top of multiple own-direction lanes', () => {
+    const waypoints = [waypoint(true, 2)];
+    expect(roadWidthMAtSegment(waypoints, 0)).toBe(9);
+  });
+
+  it('reads the segment given, not segmentIndex + 1', () => {
+    const waypoints = [waypoint(false, 1), waypoint(true, 2)];
+    expect(roadWidthMAtSegment(waypoints, 0)).toBe(3);
+    expect(roadWidthMAtSegment(waypoints, 1)).toBe(9);
   });
 });
 
