@@ -92,6 +92,30 @@
       #exam-result-badge.exam-result-badge--pass { background: #2fae5c; color: #04220f; }
       #exam-result-badge.exam-result-badge--fail { background: #d1452f; color: #240600; }
       #exam-result-maneuvers { list-style: none; margin: 0; padding: 0; width: 100%; max-width: 320px; }
+
+      #route-select {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        background: rgba(10, 10, 14, 0.85);
+        pointer-events: auto;
+      }
+      #route-select[hidden] { display: none; }
+      #route-select h2 { margin: 0; font-weight: 600; }
+      #route-select-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+      #route-select-list button {
+        padding: 10px 24px;
+        border-radius: 8px;
+        border: none;
+        background: #4a7fd1;
+        color: #fff;
+        font-size: 15px;
+        cursor: pointer;
+      }
     </style>
   </head>
   <body>
@@ -117,6 +141,10 @@
       <div id="exam-result" hidden>
         <span id="exam-result-badge"></span>
         <ul id="exam-result-maneuvers"></ul>
+      </div>
+      <div id="route-select" hidden>
+        <h2>Elige ruta</h2>
+        <ul id="route-select-list"></ul>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>

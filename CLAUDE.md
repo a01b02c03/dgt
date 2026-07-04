@@ -6,10 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 drive-test.eu: simulador de examen de conducción DGT en el navegador, con calles y señalización
 reales de Barcelona. Producto en fase inicial. Alcance de la versión gratuita: **una sola ruta**
-(`ruta-01`, Eixample). La infraestructura del gate de licencia Pro ya está construida (backend
-PHP/MySQL/Stripe + panel frontend, ver "Gate de licencia Pro" abajo), pero no gatea nada todavía:
-no existe ningún contenido Pro (rutas adicionales, circulación libre) — ver "Estado y próximos
-pasos" abajo.
+(`ruta-01`, Eixample). El gate de licencia Pro (backend PHP/MySQL/Stripe + panel frontend, ver
+"Gate de licencia Pro" abajo) ya protege contenido real: `ruta-02` (Plaça d'Espanya) es la primera
+ruta Pro (`isFree: false`) — ver "Estado y próximos pasos" abajo.
 
 ## Comandos
 
@@ -47,34 +46,40 @@ debe leer estos datos en vez de hardcodear geometría en el código de escena.
 ### Registro de rutas (`src/routes/index.ts`)
 
 Punto único de verdad de qué rutas existen en el build. `routeRegistry` es la lista completa;
-`getFreeRoutes()` filtra por `isFree: true`. **La versión gratuita del producto se define aquí**:
-solo debe haber una ruta con `isFree: true` en producción. Cuando se implemente el gate de
-licencia Pro, debe consultar este registro (no una lista separada) para decidir qué rutas
-desbloquear.
+`getFreeRoutes()` filtra por `isFree: true` (hoy: solo `ruta-01`); `getAccessibleRoutes(hasProAccess)`
+añade las rutas Pro (`isFree: false`, hoy: `ruta-02`) cuando el usuario tiene licencia activa —
+`main.ts` la usa para decidir qué rutas ofrecer, ver "Gate de licencia Pro" abajo.
 
 ### Rutas individuales (`src/routes/<id>/route.ts`)
 
 Cada ruta vive en su propia carpeta y exporta un único `RouteDefinition`. `ruta-01/route.ts` tiene
 ya geometría real extraída de OpenStreetMap (Carrer de la Marina, el Fort Pienc/Eixample, Gran
 Via, 7 waypoints, ~419m), con señalización real (`src/routes/ruta-01/route.ts`) y 326 edificios
-extruidos desde sus huellas OSM (`src/routes/ruta-01/buildings.ts`). El método de verificación de
-cada dato (señales, semáforos, exclusión de cruces ambiguos) está documentado en el comentario de
-cabecera de `route.ts` — consultarlo antes de asumir que un dato es aproximado.
+extruidos desde sus huellas OSM (`src/routes/ruta-01/buildings.ts`). `ruta-02/route.ts` (primera
+ruta Pro, `isFree: false`) tiene geometría real de Plaça d'Espanya (rotonda) → Avinguda del
+Paral·lel → Carrer de Lleida (Eixample/Sant Antoni, 13 waypoints, ~580m) y 27 edificios
+(`src/routes/ruta-02/buildings.ts`) — su señalización (`signs`) queda vacía deliberadamente, ver
+"Estado y próximos pasos". El método de verificación de cada dato está documentado en el
+comentario de cabecera de cada `route.ts` — consultarlo antes de asumir que un dato es aproximado.
 
 Los 6 `ManeuverType` del modelo tienen ya criterios de evaluación pass/fail: `traffic-light`
 (`traffic-light.ts` + `traffic-light-evaluator.ts`), `u-turn` (`u-turn-evaluator.ts`), `parallel-park`
 (`parallel-park-evaluator.ts`), `roundabout` (`roundabout-evaluator.ts`), `give-way`
 (`give-way-evaluator.ts`) y `lane-change` (`lane-change-evaluator.ts`) — ver la cabecera de cada
-archivo para el criterio exacto. `traffic-light`, `give-way` y `lane-change` se usan hoy en
-`ruta-01`; `u-turn`, `parallel-park` y `roundabout` están conectados en el bucle de `main.ts` pero
-sin ninguna maniobra instanciada en ninguna ruta todavía, así que no tienen efecto visible hasta que
-una ruta real los use. El criterio v1 de `roundabout` es deliberadamente simplificado (gira a la
-izquierda lo suficiente, no se detiene sin necesidad, no sale de calzada ni colisiona) y NO evalúa si
-el vehículo cedió el paso al tráfico que ya circula por la rotonda — no hay IA de tráfico circulando
-en rotondas todavía (ver "IA de tráfico" abajo, `traffic-ai.ts` sigue un trazado lineal, no un
-óvalo). El criterio v1 de `lane-change` (anclado a wp2 de `ruta-01`, ver el comentario de cabecera de
-`route.ts`) es igual de simplificado: el carril de salida debe ser distinto y adyacente (±1) al de
-entrada, sin salir de calzada ni colisionar — NO evalúa uso de intermitente ni comprobación de
+archivo para el criterio exacto. `traffic-light`, `give-way` y `lane-change` se usan en `ruta-01`;
+`roundabout` y `parallel-park` se usan en `ruta-02`; `u-turn` sigue conectado en el bucle de
+`main.ts` sin ninguna maniobra instanciada en ninguna ruta todavía. El criterio v1 de `roundabout`
+es deliberadamente simplificado (gira a la izquierda lo suficiente, no se detiene sin necesidad, no
+sale de calzada ni colisiona) y NO evalúa si el vehículo cedió el paso al tráfico que ya circula por
+la rotonda — no hay IA de tráfico circulando en rotondas todavía (ver "IA de tráfico" abajo,
+`traffic-ai.ts` sigue un trazado lineal, no un óvalo). Su umbral `MIN_ROTATION_DEG` se bajó de 60 a
+30 (2026-07-04, ver el comentario de esa constante en `roundabout-evaluator.ts` y el comentario de
+cabecera de `ruta-02/route.ts`): con datos reales de dos rotondas de Barcelona (Plaça de Sant Jordi
+y Plaça d'Espanya), la combinación de entrada/salida real más natural gira solo ~32-35° de rumbo
+neto — 60° era un valor elegido sin contrastar contra geometría real. El criterio v1 de
+`lane-change` (anclado a wp2 de `ruta-01`, ver el comentario de cabecera de `route.ts`) es igual de
+simplificado: el carril de salida debe ser distinto y adyacente (±1) al de entrada, sin salir de
+calzada ni colisionar — NO evalúa uso de intermitente ni comprobación de
 retrovisor (ninguno de los dos está modelado).
 
 ### IA de tráfico (`src/core/traffic-ai.ts`, `src/core/pedestrian-ai.ts`)
@@ -233,9 +238,17 @@ despliegue en Freehostia (PHP 8.4 + MySQL 8) y el contrato de los 5 endpoints.
   `/api/*`) son glue sin test; `src/ui/license-panel.ts` sigue el mismo patrón que `ui/hud.ts`
   (escritura DOM sobre contenedores estáticos de `index.html`); se inicializa en `main.ts`
   independientemente de `createScene()`, no depende de Babylon.
-- **`getAccessibleRoutes(hasProAccess)`** en `src/routes/index.ts` es el único punto donde el
-  gate decidirá qué rutas desbloquear — hoy se comporta igual que `getFreeRoutes()` porque no
-  hay ninguna ruta con `isFree: false` registrada todavía.
+- **`getAccessibleRoutes(hasProAccess)`** en `src/routes/index.ts` es el único punto que decide qué
+  rutas desbloquear — desde `ruta-02` (`isFree: false`) esto ya no se comporta igual que
+  `getFreeRoutes()` para un usuario con acceso Pro.
+- **Selector de ruta** (`main.ts` + `src/ui/route-select-screen.ts`): al arrancar, `main.ts` calcula
+  `hasProAccess` de forma síncrona y "optimista" desde `localStorage` (`isLicenseActive(readStoredLicense(), Date.now())`,
+  sin esperar la validación async contra el backend que ya hace `initLicensePanel()` — si el backend
+  revoca la licencia a mitad de sesión, la ruta Pro ya cargada no se retira, mismo límite que la
+  propia validación de `initLicensePanel()` no interrumpe la escena hoy). Con una sola ruta accesible
+  (el caso de un usuario gratuito) se entra directo, sin selector — el selector
+  (`buildRouteSelectScreen`, mismo patrón que `exam-result-screen.ts`) solo aparece si hay más de una.
+  `createScene(route)` recibe la ruta ya elegida en vez de decidir internamente.
 - **Límite deliberado**: el gate protege el frontend (build estático) llamando a estos endpoints;
   alguien técnico podría eludirlo. Es un límite blando, igual que el `deviceId` en `localStorage`
   (no es DRM real). No sobre-diseñar esto más allá de lo que ya hay.
@@ -263,18 +276,30 @@ wp5, wp6) que cruzan de acera a acera, desfasados entre sí (`pedestrianPhaseOff
 `advancePedestrian`, ver arriba), con colisión física también entre vehículos de IA entre sí y con
 peatones (no solo jugador↔lo-demás, ver arriba). Cesión de paso del jugador: además de la colisión
 física, `ruta-01` tiene 3 maniobras `give-way` (una por cada paso de peatones real, ver arriba) que
-fallan si el jugador cruza con el peatón todavía en la calzada. Gate de licencia Pro completo (ver
-arriba), sin nada Pro que gatear todavía.
+fallan si el jugador cruza con el peatón todavía en la calzada. **`ruta-02`** (Plaça d'Espanya →
+Avinguda del Paral·lel → Carrer de Lleida, Eixample/Sant Antoni, 13 waypoints, ~580m): primera ruta
+Pro (`isFree: false`), primer contenido real que protege el gate de licencia. Instancia `roundabout`
+(anclada en el punto de la curva real de la rotonda con mayor giro capturable, ver arriba) y
+`parallel-park` (junto a una plaza real de zona azul en Carrer de Lleida, dataset oficial
+`trams-aparcament-superficie` del Ajuntament). Ambas maniobras verificadas como aprobables: a nivel
+matemático (con las cabeceras/rumbos reales de la curva) y conduciendo en vivo en el navegador
+(`roundabout`, con el timing de giro adecuado). Selector de ruta (`ui/route-select-screen.ts`)
+cableado en `main.ts` para cuando hay más de una ruta accesible. Gate de licencia Pro completo (ver
+arriba), ya gateando `ruta-02` de verdad.
 
 **No implementado todavía**:
-- `u-turn`, `parallel-park` y `roundabout` tienen criterio de evaluación (ver arriba) pero ninguna
-  ruta real instancia todavía una maniobra de estos tipos, así que no tienen efecto visible hoy.
+- `u-turn` tiene criterio de evaluación (ver arriba) pero ninguna ruta real instancia todavía una
+  maniobra de este tipo, así que no tiene efecto visible hoy.
+- Señalización real (semáforos, stop/ceda el paso, pasos de peatones) de `ruta-02` — a diferencia de
+  `ruta-01`, no se verificó exhaustivamente esta sesión; solo se confirmó que Plaça d'Espanya tiene
+  infraestructura semafórica real (41 nodos OSM `highway=traffic_signals` en su entorno inmediato).
+  `ruta-02.signs` y `.crossTraffic` quedan vacíos.
 - Físicas de vehículo "de verdad" (motor de físicas de Babylon) — el controlador actual es
   cinemático, decisión deliberada hasta ahora, no una limitación técnica descubierta.
 - Verificación del checkout de Stripe contra la API real (hoy solo probado con un fake HTTP
   inyectado en los tests del backend).
-- Rutas o circulación libre de la versión Pro — el gate de licencia ya existe (ver arriba), pero
-  no hay ningún contenido Pro que gatear todavía.
+- Circulación libre de la versión Pro — el gate de licencia ya gatea una ruta real (`ruta-02`), pero
+  no hay circulación libre todavía.
 
 **Investigado y descartado**: el defecto cosmético de triangulación del techo (roof cap) que este
 documento reportaba antes en edificios de huella compleja (p. ej. `osm-120022089`, por sospecha de
@@ -320,3 +345,24 @@ el jugador y el resto de vehículos de IA (se añade a `otherVehicleCorners` mie
 siempre) y no distingue R-1 (ceda el paso) de R-2 (stop) — el criterio es binario, igual que con
 peatones; tampoco modela la regla general de prioridad-a-la-derecha sin señal. `ruta-01` define
 `crossTraffic: []`, así que nada de esto tiene efecto visible hoy.
+
+**Selección de zona para `ruta-02`** (2026-07-04): el usuario aportó las 3 zonas reales más
+habituales del examen práctico de la DGT en Barcelona (La Campana/Sants-Montjuïc, Montjuïc/Sot del
+Migdia, Universitat/Pedralbes). Se investigaron y descartaron dos rotondas reales antes de Plaça
+d'Espanya:
+- **Plaça de les Matemàtiques** ("La Campana", Carrer de la Mineria): rotonda real confirmada, pero
+  sin ninguna zona de aparcamiento de coche real verificable cerca (el dataset oficial de
+  aparcamiento solo tiene zona verda de motos y carga/descarga en esa zona, no `AZL`).
+- **Plaça de Sant Jordi** (Montjuïc, junto al Palau Sant Jordi): rotonda real, con zona azul real
+  cerca (Avinguda dels Montanyans, Carrer de Foixarda), pero descartada por dos motivos
+  independientes: (1) la única salida real hacia esa zona de aparcamiento da solo ~37° de giro neto
+  de rumbo entre las dos calles, un límite fijo de la topología del anillo (no depende de cuánto
+  rodeo dé el conductor); (2) no existe ninguna calle vehicular real que conecte el resto de la red
+  de la rotonda con esa zona de aparcamiento — solo caminos peatonales, verificado exhaustivamente
+  vía Overpass en la zona entre el anillo del Estadi Olímpic y Montanyans/Mirador del Palau Nacional.
+
+Esto también reveló que **medir el ángulo de posición alrededor del centro de una rotonda no es lo
+mismo que medir la rotación de rumbo real del vehículo** (lo que de verdad comprueba
+`roundabout-evaluator.ts`) — para un anillo real no perfectamente circular, la primera métrica puede
+ser mucho mayor que la segunda. Ver `ruta-02/route.ts` para el detalle completo de la geometría que
+sí funcionó (Plaça d'Espanya, Gran Via → Paral·lel).

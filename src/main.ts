@@ -13,7 +13,8 @@ import {
   ownDirectionLaneCount,
   roadWidthMAtSegment,
 } from './core/lanes';
-import { licenseStatusView } from './core/license';
+import { isLicenseActive, licenseStatusView } from './core/license';
+import type { RouteDefinition } from './core/route-types';
 import { activateLicense, fetchSessionStatus, requestCheckout, validateLicense } from './license/api';
 import { getOrCreateDeviceId, readStoredLicense, writeStoredLicense } from './license/storage';
 import {
@@ -48,7 +49,7 @@ import {
   stepAiVehicle,
 } from './core/traffic-ai';
 import { createUTurnEvalState, updateUTurnOutcomes } from './core/u-turn-evaluator';
-import { getBuildings, getFreeRoutes } from './routes';
+import { getAccessibleRoutes, getBuildings } from './routes';
 import { buildBuildingMeshes } from './scene/building-mesh';
 import { attachKeyboardInput } from './scene/keyboard-input';
 import {
@@ -73,6 +74,7 @@ import {
 import { buildExamResultScreen } from './ui/exam-result-screen';
 import { buildHud } from './ui/hud';
 import { buildLicensePanel } from './ui/license-panel';
+import { buildRouteSelectScreen } from './ui/route-select-screen';
 
 const canvas = document.getElementById('renderCanvas') as HTMLCanvasElement;
 const engine = new Engine(canvas, true);
@@ -148,25 +150,20 @@ function initLicensePanel(): void {
   }
 }
 
-function createScene(): Scene {
+function createScene(route: RouteDefinition): Scene {
   const scene = new Scene(engine);
 
   new HemisphericLight('light', new Vector3(0, 1, 0), scene);
 
-  const [freeRoute] = getFreeRoutes();
-  if (!freeRoute) {
-    return scene;
-  }
-
-  const origin = freeRoute.waypoints[0].position;
-  const buildings = getBuildings(freeRoute.id);
-  buildRoadMesh(freeRoute, origin, scene);
+  const origin = route.waypoints[0].position;
+  const buildings = getBuildings(route.id);
+  buildRoadMesh(route, origin, scene);
   buildBuildingMeshes(buildings, origin, scene);
 
-  const routePoints = freeRoute.waypoints.map((waypoint) => toLocalMeters(origin, waypoint.position));
+  const routePoints = route.waypoints.map((waypoint) => toLocalMeters(origin, waypoint.position));
   // Ancho de calzada por tramo (ver roadWidthMAtSegment en core/lanes.ts), no
   // un ROAD_WIDTH_M fijo: coherente con el ancho visual de road-mesh.ts.
-  const roadWidthMAt = (segmentIndex: number) => roadWidthMAtSegment(freeRoute.waypoints, segmentIndex);
+  const roadWidthMAt = (segmentIndex: number) => roadWidthMAtSegment(route.waypoints, segmentIndex);
   const buildingShapes = buildings.map((building) => ({
     id: building.id,
     footprint: building.footprint.map((corner) => toLocalMeters(origin, corner)),
@@ -188,7 +185,7 @@ function createScene(): Scene {
   groundMaterial.diffuseColor = new Color3(0.5, 0.55, 0.45);
   ground.material = groundMaterial;
 
-  const startWaypoint = freeRoute.waypoints[0];
+  const startWaypoint = route.waypoints[0];
   let vehicleState = createVehicleState(0, 0, (startWaypoint.headingDeg * Math.PI) / 180);
 
   const { mesh: vehicleMesh, bodyMaterial: vehicleBodyMaterial } = buildVehicleMesh(scene);
@@ -205,7 +202,7 @@ function createScene(): Scene {
   camera.maxCameraSpeed = 20;
   camera.attachControl(true);
 
-  buildSignMarkers(freeRoute, origin, scene);
+  buildSignMarkers(route, origin, scene);
 
   // Tráfico ambiente: vehículos de IA que siguen el mismo trazado que el
   // jugador, en su propio carril, respetan los semáforos en rojo y guardan
@@ -230,7 +227,7 @@ function createScene(): Scene {
     bodyMaterial.diffuseColor = AI_VEHICLE_COLOR;
     const centerPose = poseAtArcLength(routePoints, arcLengthTable, offsetM);
     const spawnSegmentIndex = queryRoadBounds(routePoints, roadWidthMAt, centerPose).segmentIndex;
-    const laneCount = ownDirectionLaneCount(freeRoute.waypoints, spawnSegmentIndex);
+    const laneCount = ownDirectionLaneCount(route.waypoints, spawnSegmentIndex);
     const laneIndex = index % laneCount;
     const pose = offsetPoseToLane(centerPose, laneOffsetM(laneIndex, laneCount));
     mesh.position.x = pose.x;
@@ -244,7 +241,7 @@ function createScene(): Scene {
   // de ruta-01/route.ts sobre qué tramos son oneway según OSM). Reutiliza la
   // misma lógica de traffic-ai.ts sobre un sub-trazado invertido, así que el
   // rumbo de cada pose ya sale correctamente invertido sin caso especial.
-  const oncomingRoute = buildOncomingRoute(freeRoute.waypoints, routePoints);
+  const oncomingRoute = buildOncomingRoute(route.waypoints, routePoints);
   const oncomingArcLengthTable = buildArcLengthTable(oncomingRoute.points);
   const oncomingRouteLengthM = oncomingArcLengthTable[oncomingArcLengthTable.length - 1];
   const ONCOMING_VEHICLE_INITIAL_OFFSETS_M = [30, 90];
@@ -269,7 +266,7 @@ function createScene(): Scene {
   // cada uno es el de su propio tramo (roadWidthMAt), no un ROAD_WIDTH_M fijo
   // — necesario porque wp5/wp6 de ruta-01 caen en el tramo de sentido único,
   // más estrecho que el tramo de doble sentido donde está wp1.
-  const pedestrians = freeRoute.signs
+  const pedestrians = route.signs
     .filter((sign) => sign.type === 'pedestrian-crossing')
     .map((sign, index) => {
       const crossing = { position: toLocalMeters(origin, sign.position), headingDeg: sign.headingDeg };
@@ -292,7 +289,7 @@ function createScene(): Scene {
   // give-way justo en el waypoint más próximo a su paso de peatones real (ver
   // el comentario de cabecera de route.ts), así que "el más cercano" resuelve
   // el emparejamiento correcto sin un campo explícito en el modelo de ruta.
-  const giveWayPedestrianIndices: (number | null)[] = freeRoute.maneuvers.map((maneuver) => {
+  const giveWayPedestrianIndices: (number | null)[] = route.maneuvers.map((maneuver) => {
     if (maneuver.type !== 'give-way') {
       return null;
     }
@@ -318,8 +315,8 @@ function createScene(): Scene {
   // patrón que roundabout/u-turn/parallel-park. Sin estado propio: su pose se
   // recalcula cada frame a partir de elapsedSimS (ver el bucle de render más
   // abajo), igual que los semáforos.
-  const crossTrafficVehicles = freeRoute.crossTraffic.map((spawn, index) => {
-    const waypoint = freeRoute.waypoints[spawn.atWaypointIndex];
+  const crossTrafficVehicles = route.crossTraffic.map((spawn, index) => {
+    const waypoint = route.waypoints[spawn.atWaypointIndex];
     const junction = { position: routePoints[spawn.atWaypointIndex], headingDeg: waypoint.headingDeg };
     const { mesh, bodyMaterial } = buildVehicleMesh(scene);
     bodyMaterial.diffuseColor = AI_VEHICLE_COLOR;
@@ -330,25 +327,25 @@ function createScene(): Scene {
   // waypoint (a diferencia del emparejamiento por distancia de los peatones
   // de arriba, CrossTrafficSpawn.atWaypointIndex ya es exacto, no hace falta
   // adivinar por cercanía).
-  const giveWayCrossTrafficIndices: (number | null)[] = freeRoute.maneuvers.map((maneuver) => {
+  const giveWayCrossTrafficIndices: (number | null)[] = route.maneuvers.map((maneuver) => {
     if (maneuver.type !== 'give-way') {
       return null;
     }
-    const index = freeRoute.crossTraffic.findIndex((spawn) => spawn.atWaypointIndex === maneuver.atWaypointIndex);
+    const index = route.crossTraffic.findIndex((spawn) => spawn.atWaypointIndex === maneuver.atWaypointIndex);
     return index === -1 ? null : index;
   });
 
-  const maneuverMarkers = buildManeuverMarkers(freeRoute, origin, scene);
-  const trafficLightMarkers = buildTrafficLightMarkers(freeRoute, origin, scene);
-  let maneuverProgress = createManeuverProgress(freeRoute.maneuvers);
-  let crossingState = createStopLineCrossingState(freeRoute.maneuvers.length);
-  let giveWayEvalState = createGiveWayEvalState(freeRoute.maneuvers.length);
-  let uTurnEvalState = createUTurnEvalState(freeRoute.maneuvers.length);
-  let parallelParkEvalState = createParallelParkEvalState(freeRoute.maneuvers.length);
-  let roundaboutEvalState = createRoundaboutEvalState(freeRoute.maneuvers.length);
-  let laneChangeEvalState = createLaneChangeEvalState(freeRoute.maneuvers.length);
+  const maneuverMarkers = buildManeuverMarkers(route, origin, scene);
+  const trafficLightMarkers = buildTrafficLightMarkers(route, origin, scene);
+  let maneuverProgress = createManeuverProgress(route.maneuvers);
+  let crossingState = createStopLineCrossingState(route.maneuvers.length);
+  let giveWayEvalState = createGiveWayEvalState(route.maneuvers.length);
+  let uTurnEvalState = createUTurnEvalState(route.maneuvers.length);
+  let parallelParkEvalState = createParallelParkEvalState(route.maneuvers.length);
+  let roundaboutEvalState = createRoundaboutEvalState(route.maneuvers.length);
+  let laneChangeEvalState = createLaneChangeEvalState(route.maneuvers.length);
 
-  const hud = buildHud(freeRoute.maneuvers);
+  const hud = buildHud(route.maneuvers);
   maneuverProgress.forEach((entry, index) => hud.setManeuverState(index, maneuverChecklistLabel(entry)));
 
   const examResultScreen = buildExamResultScreen();
@@ -438,14 +435,14 @@ function createScene(): Scene {
       wasOnRoad = bounds.onRoad;
     }
 
-    hud.setSpeed(speedMsToKmh(vehicleState.speedMs), currentSpeedLimitKmh(freeRoute.waypoints, bounds.segmentIndex));
+    hud.setSpeed(speedMsToKmh(vehicleState.speedMs), currentSpeedLimitKmh(route.waypoints, bounds.segmentIndex));
 
     // El jugador no tiene un carril fijo (se mueve libre en 2D, ver
     // vehicle-controller.ts), así que su carril "actual" se deriva de su
     // desplazamiento lateral respecto al eje — usado más abajo tanto para la
     // evaluación de la maniobra lane-change como para saber si el jugador
     // bloquea a un vehículo de IA que le siga por detrás en ese carril.
-    const playerLaneCount = ownDirectionLaneCount(freeRoute.waypoints, bounds.segmentIndex);
+    const playerLaneCount = ownDirectionLaneCount(route.waypoints, bounds.segmentIndex);
     const playerLaneIndex = laneIndexFromLateralOffsetM(bounds.lateralOffsetM, playerLaneCount);
 
     // Seguimiento de progreso de maniobras: solo registra métricas (todavía no
@@ -478,7 +475,7 @@ function createScene(): Scene {
     const trafficLightResult = updateTrafficLightOutcomes(
       maneuverProgress,
       crossingState,
-      freeRoute.waypoints,
+      route.waypoints,
       routePoints,
       { x: vehicleState.x, z: vehicleState.z },
       elapsedSimS,
@@ -501,7 +498,7 @@ function createScene(): Scene {
     // un vehículo de tráfico transversal ocupando el cruce
     // (giveWayCrossTrafficIndices, ver arriba; siempre null en ruta-01 hoy).
     const previousGiveWayOutcomes = maneuverProgress.map((entry) => entry.outcome);
-    const giveWayObstructed = freeRoute.maneuvers.map((_maneuver, index) => {
+    const giveWayObstructed = route.maneuvers.map((_maneuver, index) => {
       const pedestrianIndex = giveWayPedestrianIndices[index];
       const obstructedByPedestrian =
         pedestrianIndex !== null &&
@@ -513,7 +510,7 @@ function createScene(): Scene {
     const giveWayResult = updateGiveWayOutcomes(
       maneuverProgress,
       giveWayEvalState,
-      freeRoute.waypoints,
+      route.waypoints,
       routePoints,
       { x: vehicleState.x, z: vehicleState.z },
       giveWayObstructed,
@@ -546,7 +543,7 @@ function createScene(): Scene {
     const parallelParkResult = updateParallelParkOutcomes(
       maneuverProgress,
       parallelParkEvalState,
-      freeRoute.waypoints,
+      route.waypoints,
       routePoints,
       { x: vehicleState.x, z: vehicleState.z, headingRad: vehicleState.headingRad, speedMs: vehicleState.speedMs },
       bounds.onRoad,
@@ -597,7 +594,7 @@ function createScene(): Scene {
 
     // Semáforos: recoloreado continuo (no solo en transición), según la fase actual.
     trafficLightMarkers.forEach((marker) => {
-      const maneuver = freeRoute.maneuvers[marker.maneuverIndex];
+      const maneuver = route.maneuvers[marker.maneuverIndex];
       const phase = getTrafficLightPhase(elapsedSimS, maneuver.atWaypointIndex);
       marker.material.diffuseColor = TRAFFIC_LIGHT_PHASE_COLORS[phase];
     });
@@ -615,7 +612,7 @@ function createScene(): Scene {
     // suyo (jugador u otro coche de IA), ver core/traffic-ai.ts. Se usa un
     // snapshot de las distancias antes de este frame para que el orden de
     // iteración no afecte al resultado.
-    const redLightArcLengths = freeRoute.maneuvers
+    const redLightArcLengths = route.maneuvers
       .filter((maneuver) => maneuver.type === 'traffic-light')
       .filter((maneuver) => getTrafficLightPhase(elapsedSimS, maneuver.atWaypointIndex) === 'red')
       .map((maneuver) => arcLengthTable[maneuver.atWaypointIndex]);
@@ -636,9 +633,9 @@ function createScene(): Scene {
         x: vehicle.mesh.position.x,
         z: vehicle.mesh.position.z,
       });
-      const speedLimitMs = currentSpeedLimitKmh(freeRoute.waypoints, aiBounds.segmentIndex) / 3.6;
+      const speedLimitMs = currentSpeedLimitKmh(route.waypoints, aiBounds.segmentIndex) / 3.6;
       const stopLineArcM = nextStopArcLengthM(vehicle.state.distanceAlongRouteM, stopPointArcLengths, leadArcM);
-      const laneCount = ownDirectionLaneCount(freeRoute.waypoints, aiBounds.segmentIndex);
+      const laneCount = ownDirectionLaneCount(route.waypoints, aiBounds.segmentIndex);
 
       // Colisión física con otro vehículo de IA (propio sentido u oncoming) o
       // un peatón: la distancia de seguimiento (leadArcM) ya evita casi
@@ -694,7 +691,7 @@ function createScene(): Scene {
     // oncomingRoute — no interactúan con el jugador (arc-following, carriles
     // distintos), pero sí tienen la misma red de seguridad de colisión física
     // que el tráfico normal (ver el forEach de abajo).
-    const oncomingRedLightArcLengths = freeRoute.maneuvers
+    const oncomingRedLightArcLengths = route.maneuvers
       .filter((maneuver) => maneuver.type === 'traffic-light')
       .filter((maneuver) => getTrafficLightPhase(elapsedSimS, maneuver.atWaypointIndex) === 'red')
       .map((maneuver) => mirroredArcLengthOfWaypoint(oncomingArcLengthTable, oncomingRoute.twoWayEndIndex, maneuver.atWaypointIndex))
@@ -711,7 +708,7 @@ function createScene(): Scene {
         x: vehicle.mesh.position.x,
         z: vehicle.mesh.position.z,
       });
-      const speedLimitMs = currentSpeedLimitKmh(freeRoute.waypoints, oncomingBounds.segmentIndex) / 3.6;
+      const speedLimitMs = currentSpeedLimitKmh(route.waypoints, oncomingBounds.segmentIndex) / 3.6;
       const stopLineArcM = nextStopArcLengthM(vehicle.state.distanceAlongRouteM, oncomingStopPointArcLengths, leadArcM);
 
       // Misma red de seguridad de colisión física que en aiVehicles.forEach
@@ -776,18 +773,39 @@ function createScene(): Scene {
     }
   });
 
-  console.log(`Ruta cargada: ${freeRoute.name} (${freeRoute.waypoints.length} waypoints)`);
+  console.log(`Ruta cargada: ${route.name} (${route.waypoints.length} waypoints)`);
 
   return scene;
 }
 
 initLicensePanel();
 
-const scene = createScene();
+// Qué rutas puede jugar este usuario: chequeo síncrono y "optimista" desde
+// localStorage (mismo dato que initLicensePanel usa para su primer render,
+// sin esperar la validación async contra el backend) — si el backend revoca
+// la licencia a mitad de sesión, la ruta Pro ya cargada no se retira, igual
+// que la propia validación de initLicensePanel tampoco interrumpe la escena
+// hoy. Con una sola ruta accesible (el caso de un usuario gratuito hoy) se
+// entra directo, sin selector — el selector solo aparece si hay más de una.
+const hasProAccess = isLicenseActive(readStoredLicense(), Date.now());
+const accessibleRoutes = getAccessibleRoutes(hasProAccess);
 
-engine.runRenderLoop(() => {
-  scene.render();
-});
+function startScene(route: RouteDefinition): void {
+  const scene = createScene(route);
+  engine.runRenderLoop(() => {
+    scene.render();
+  });
+}
+
+if (accessibleRoutes.length <= 1) {
+  const [route] = accessibleRoutes;
+  if (route) {
+    startScene(route);
+  }
+} else {
+  const routeSelectScreen = buildRouteSelectScreen();
+  routeSelectScreen.show(accessibleRoutes, startScene);
+}
 
 window.addEventListener('resize', () => {
   engine.resize();

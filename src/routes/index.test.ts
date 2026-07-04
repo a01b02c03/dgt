@@ -14,6 +14,13 @@ describe('routeRegistry', () => {
     expect(route?.city).toBe('Barcelona');
   });
 
+  it('finds ruta-02 by id, registered as Pro (isFree: false)', () => {
+    const route = getRoute('ruta-02');
+    expect(route).toBeDefined();
+    expect(route?.city).toBe('Barcelona');
+    expect(route?.isFree).toBe(false);
+  });
+
   it('does not register duplicate route ids', () => {
     const ids = routeRegistry.map((route) => route.id);
     expect(new Set(ids).size).toBe(ids.length);
@@ -25,7 +32,9 @@ describe('getAccessibleRoutes', () => {
     expect(getAccessibleRoutes(false)).toEqual(getFreeRoutes());
   });
 
-  it('still matches getFreeRoutes for a user with Pro access, since no Pro route exists yet', () => {
-    expect(getAccessibleRoutes(true)).toEqual(getFreeRoutes());
+  it('includes the Pro route for a user with Pro access, unlike getFreeRoutes', () => {
+    const accessible = getAccessibleRoutes(true);
+    expect(accessible).toEqual(routeRegistry);
+    expect(accessible.length).toBeGreaterThan(getFreeRoutes().length);
   });
 });

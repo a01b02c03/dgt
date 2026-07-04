@@ -26,8 +26,20 @@ export function createRoundaboutEvalState(maneuverCount: number): RoundaboutEval
   }));
 }
 
-/** Rotación mínima (grados) hacia la izquierda para considerar que el vehículo rodeó la rotonda, no que la cruzó recto. */
-const MIN_ROTATION_DEG = 60;
+/**
+ * Rotación mínima (grados) hacia la izquierda para considerar que el vehículo
+ * rodeó la rotonda, no que la cruzó recto. Bajado de 60 a 30 (2026-07-04) con
+ * datos reales de rotondas de Barcelona: en Plaça de Sant Jordi y Plaça
+ * d'Espanya, la combinación de entrada/salida real más natural (la que
+ * conecta con una zona de aparcamiento real, ver ruta-02/route.ts) gira solo
+ * ~32-35° de rumbo neto entre el radio de disparo de entrada y el de salida
+ * — calculado punto a punto sobre la curva real, no como el ángulo de
+ * posición alrededor del centro de la rotonda (esa métrica alternativa da
+ * valores mucho más altos y engañosos, ver el commit que introdujo este
+ * cambio). 60° era un valor elegido sin contrastar contra geometría real;
+ * 30° dado el criterio real; 30° deja margen sobre esos ~32-35° reales.
+ */
+const MIN_ROTATION_DEG = 30;
 const STOPPED_SPEED_THRESHOLD_MS = 0.1;
 
 /** Normaliza un ángulo en grados al rango (-180, 180]. */
