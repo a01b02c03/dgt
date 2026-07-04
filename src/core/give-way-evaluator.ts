@@ -23,15 +23,19 @@ export function createGiveWayEvalState(maneuverCount: number): GiveWayCrossingSt
  * es el instante en que la proyección firmada del vehículo sobre el eje de
  * avance del waypoint pasa de <= 0 a > 0 (mismo cruce de línea que
  * traffic-light-evaluator.ts, reutilizando projectOntoHeadingAxis). Criterio
- * v1: si en ese instante el peatón emparejado con esta maniobra está sobre la
- * calzada (`obstructedByPedestrian[index]`, calculado por el caller — ver
- * main.ts, que empareja cada maniobra 'give-way' con el peatón más cercano a
- * su waypoint una sola vez al construir la escena), el jugador ha cruzado sin
- * cederle el paso => 'fail'; sin peatón en calzada en ese instante => 'pass'.
- * No distingue si el vehículo redujo la velocidad y aun así cruzó con el
- * peatón todavía en calzada de si nunca frenó — ambos violan la cesión de
- * paso real, igual que en un examen real. Cada maniobra se evalúa como mucho
- * una vez.
+ * v1: si en ese instante `obstructed[index]` es true, el jugador ha cruzado
+ * sin ceder el paso => 'fail'; si no, 'pass'. `obstructed` lo calcula el
+ * caller (ver main.ts) y es deliberadamente genérico: hoy puede venir de un
+ * peatón sobre la calzada (los 3 give-way reales de `ruta-01`, emparejando
+ * cada maniobra con el peatón más cercano a su waypoint una sola vez al
+ * construir la escena) o de un vehículo de tráfico transversal ocupando el
+ * cruce (`core/cross-traffic-ai.ts`, infraestructura genérica sin ninguna
+ * ruta real todavía, ver CLAUDE.md) — este evaluador no necesita saber la
+ * diferencia, igual que `nextStopArcLengthM` en traffic-ai.ts no distingue
+ * semáforo de peatón. No distingue si el vehículo redujo la velocidad y aun
+ * así cruzó obstruido de si nunca frenó — ambos violan la cesión de paso
+ * real, igual que en un examen real. Cada maniobra se evalúa como mucho una
+ * vez.
  */
 export function updateGiveWayOutcomes(
   progress: ManeuverProgress[],
@@ -39,7 +43,7 @@ export function updateGiveWayOutcomes(
   waypoints: Waypoint[],
   waypointPositions: LocalPoint[],
   vehiclePosition: LocalPoint,
-  obstructedByPedestrian: boolean[],
+  obstructed: boolean[],
 ): { progress: ManeuverProgress[]; evalState: GiveWayCrossingState[] } {
   const nextEvalState = [...evalState];
 
@@ -63,7 +67,7 @@ export function updateGiveWayOutcomes(
       return entry;
     }
 
-    const outcome: ManeuverOutcome = obstructedByPedestrian[index] ? 'fail' : 'pass';
+    const outcome: ManeuverOutcome = obstructed[index] ? 'fail' : 'pass';
     return { ...entry, outcome };
   });
 

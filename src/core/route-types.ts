@@ -54,6 +54,26 @@ export interface Maneuver {
   description: string;
 }
 
+/**
+ * Cruce sin semaforizar con tráfico de IA de una calle transversal (ver
+ * core/cross-traffic-ai.ts). Anclado a un waypoint del trazado principal,
+ * igual que `Maneuver` — normalmente emparejado con una maniobra `give-way`
+ * en ese mismo waypoint (el jugador cede el paso al tráfico transversal,
+ * igual que ya cede el paso a un peatón). Infraestructura genérica: ninguna
+ * ruta real instancia esto todavía (ver CLAUDE.md), así que `crossTraffic`
+ * es un array vacío en `ruta-01`.
+ */
+export interface CrossTrafficSpawn {
+  atWaypointIndex: number;
+  /**
+   * Lado del que llega el tráfico transversal, relativo al rumbo del tramo
+   * principal en ese waypoint. v1 solo modela un sentido a la vez (ver
+   * core/cross-traffic-ai.ts) — el otro lado de la calle transversal no
+   * está modelado todavía.
+   */
+  fromSide: 'left' | 'right';
+}
+
 /** Definición completa de una ruta de examen: trazado + señalización + maniobras evaluables. */
 export interface RouteDefinition {
   id: string;
@@ -63,4 +83,5 @@ export interface RouteDefinition {
   waypoints: Waypoint[];
   signs: SignPlacement[];
   maneuvers: Maneuver[];
+  crossTraffic: CrossTrafficSpawn[];
 }

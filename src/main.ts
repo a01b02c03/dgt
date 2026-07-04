@@ -16,6 +16,11 @@ import {
 import { licenseStatusView } from './core/license';
 import { activateLicense, fetchSessionStatus, requestCheckout, validateLicense } from './license/api';
 import { getOrCreateDeviceId, readStoredLicense, writeStoredLicense } from './license/storage';
+import {
+  crossTrafficPhaseOffsetM,
+  crossTrafficPose,
+  crossTrafficPositionAt,
+} from './core/cross-traffic-ai';
 import { createGiveWayEvalState, updateGiveWayOutcomes } from './core/give-way-evaluator';
 import { createLaneChangeEvalState, updateLaneChangeOutcomes } from './core/lane-change-evaluator';
 import { createManeuverProgress, updateManeuverProgress } from './core/maneuver-tracker';
@@ -306,6 +311,33 @@ function createScene(): Scene {
     return bestIndex;
   });
 
+  // Tráfico de IA transversal: uno por cada CrossTrafficSpawn de la ruta (ver
+  // core/cross-traffic-ai.ts) — infraestructura genérica, ruta-01 no define
+  // ninguno todavía (ver CLAUDE.md), así que este array queda vacío en la
+  // práctica y el resto de este bloque no tiene efecto visible hoy, mismo
+  // patrón que roundabout/u-turn/parallel-park. Sin estado propio: su pose se
+  // recalcula cada frame a partir de elapsedSimS (ver el bucle de render más
+  // abajo), igual que los semáforos.
+  const crossTrafficVehicles = freeRoute.crossTraffic.map((spawn, index) => {
+    const waypoint = freeRoute.waypoints[spawn.atWaypointIndex];
+    const junction = { position: routePoints[spawn.atWaypointIndex], headingDeg: waypoint.headingDeg };
+    const { mesh, bodyMaterial } = buildVehicleMesh(scene);
+    bodyMaterial.diffuseColor = AI_VEHICLE_COLOR;
+    return { mesh, junction, fromSide: spawn.fromSide, phaseOffsetM: crossTrafficPhaseOffsetM(index) };
+  });
+
+  // Emparejamiento maniobra 'give-way' -> tráfico transversal en el mismo
+  // waypoint (a diferencia del emparejamiento por distancia de los peatones
+  // de arriba, CrossTrafficSpawn.atWaypointIndex ya es exacto, no hace falta
+  // adivinar por cercanía).
+  const giveWayCrossTrafficIndices: (number | null)[] = freeRoute.maneuvers.map((maneuver) => {
+    if (maneuver.type !== 'give-way') {
+      return null;
+    }
+    const index = freeRoute.crossTraffic.findIndex((spawn) => spawn.atWaypointIndex === maneuver.atWaypointIndex);
+    return index === -1 ? null : index;
+  });
+
   const maneuverMarkers = buildManeuverMarkers(freeRoute, origin, scene);
   const trafficLightMarkers = buildTrafficLightMarkers(freeRoute, origin, scene);
   let maneuverProgress = createManeuverProgress(freeRoute.maneuvers);
@@ -331,6 +363,20 @@ function createScene(): Scene {
   scene.onBeforeRenderObservable.add(() => {
     const dtSeconds = engine.getDeltaTime() / 1000;
     elapsedSimS += dtSeconds;
+
+    // Tráfico transversal: sin estado propio (ver core/cross-traffic-ai.ts),
+    // su pose se recalcula cada frame a partir de elapsedSimS, igual que los
+    // semáforos — se oculta (setEnabled(false)) durante el hueco entre ciclos.
+    const crossTrafficStates = crossTrafficVehicles.map((vehicle) => {
+      const position = crossTrafficPositionAt(elapsedSimS, vehicle.phaseOffsetM);
+      const pose = crossTrafficPose(vehicle.junction, vehicle.fromSide, position);
+      vehicle.mesh.position.x = pose.x;
+      vehicle.mesh.position.z = pose.z;
+      vehicle.mesh.rotation.y = pose.headingRad;
+      vehicle.mesh.setEnabled(position.onCrossing);
+      return { onCrossing: position.onCrossing };
+    });
+
     const candidate = stepVehicle(vehicleState, getInput(), dtSeconds);
 
     // Colisión: a diferencia de los límites de calzada, un coche real no
@@ -349,9 +395,17 @@ function createScene(): Scene {
     // reutilizados más abajo también por la propia IA de tráfico (aiVehicles/
     // oncomingVehicles forEach) para su propia colisión física entre sí y con
     // peatones — un único snapshot por frame, no uno distinto por consumidor.
-    const otherVehicleCorners = [...aiVehicles, ...oncomingVehicles].map((v) =>
-      vehicleCorners(v.mesh.position.x, v.mesh.position.z, v.mesh.rotation.y, VEHICLE_LENGTH_M, VEHICLE_WIDTH_M),
-    );
+    // El tráfico transversal se añade al final (solo mientras onCrossing) sin
+    // afectar los índices de aiVehicles/oncomingVehicles que ya se usan más
+    // abajo (aiVehicles.length + index para oncoming).
+    const otherVehicleCorners = [
+      ...[...aiVehicles, ...oncomingVehicles].map((v) =>
+        vehicleCorners(v.mesh.position.x, v.mesh.position.z, v.mesh.rotation.y, VEHICLE_LENGTH_M, VEHICLE_WIDTH_M),
+      ),
+      ...crossTrafficVehicles
+        .filter((_, index) => crossTrafficStates[index].onCrossing)
+        .map((v) => vehicleCorners(v.mesh.position.x, v.mesh.position.z, v.mesh.rotation.y, VEHICLE_LENGTH_M, VEHICLE_WIDTH_M)),
+    ];
     const collidingVehicleIndex = findCollidingRectangle(corners, otherVehicleCorners);
     const pedestrianPoints = pedestrians.map((p) => ({ x: p.mesh.position.x, z: p.mesh.position.z }));
     const collidingPedestrianIndex = findCollidingPoint(corners, pedestrianPoints);
@@ -441,17 +495,20 @@ function createScene(): Scene {
 
     // Evaluación pass/fail de maniobras give-way: mismo evento de cruce de
     // línea que traffic-light (ver give-way-evaluator.ts), pero el criterio es
-    // si el peatón emparejado con esta maniobra (giveWayPedestrianIndices,
-    // calculado una sola vez arriba) está sobre la calzada en el instante de
-    // cruce. Usa el estado de los peatones del frame anterior (se actualizan
-    // más abajo), mismo patrón de snapshot que el resto de la IA de tráfico.
+    // si hay algo obstruyendo en el instante de cruce — un peatón sobre la
+    // calzada (giveWayPedestrianIndices, ver arriba, usa el estado del frame
+    // anterior, mismo patrón de snapshot que el resto de la IA de tráfico) o
+    // un vehículo de tráfico transversal ocupando el cruce
+    // (giveWayCrossTrafficIndices, ver arriba; siempre null en ruta-01 hoy).
     const previousGiveWayOutcomes = maneuverProgress.map((entry) => entry.outcome);
     const giveWayObstructed = freeRoute.maneuvers.map((_maneuver, index) => {
       const pedestrianIndex = giveWayPedestrianIndices[index];
-      return (
+      const obstructedByPedestrian =
         pedestrianIndex !== null &&
-        isPedestrianInRoadway(pedestrians[pedestrianIndex].state, pedestrians[pedestrianIndex].roadHalfWidthM)
-      );
+        isPedestrianInRoadway(pedestrians[pedestrianIndex].state, pedestrians[pedestrianIndex].roadHalfWidthM);
+      const crossTrafficIndex = giveWayCrossTrafficIndices[index];
+      const obstructedByCrossTraffic = crossTrafficIndex !== null && crossTrafficStates[crossTrafficIndex].onCrossing;
+      return obstructedByPedestrian || obstructedByCrossTraffic;
     });
     const giveWayResult = updateGiveWayOutcomes(
       maneuverProgress,

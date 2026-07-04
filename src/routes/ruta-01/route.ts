@@ -228,4 +228,16 @@ export const ruta01: RouteDefinition = {
       description: 'Cambio de carril en Carrer de la Marina',
     },
   ],
+  // Sin tráfico de IA transversal: los 5 cruces reales de esta ruta (Gran Via,
+  // Diputació, Consell de Cent, Diagonal, Aragó) ya están semaforizados, y wp2
+  // se investigó y descartó como cruce sin semaforizar (ver el comentario de
+  // wp2 más arriba y CLAUDE.md "Investigado y descartado"). Reverificado
+  // 2026-07-04 con una búsqueda más amplia (todas las `way["highway"]` de tipo
+  // vehicular en el bbox de la ruta, no solo alrededor de wp2): Carrer de
+  // Sardenya y Carrer de Lepant, las dos calles vehiculares reales más
+  // cercanas al trazado, corren paralelas a Marina (mismo eje diagonal del
+  // Eixample), no la cruzan — confirmado por ausencia de nodos compartidos
+  // con ninguna de las 7 `way` de Marina. No hay, por tanto, ningún cruce real
+  // sobre el que instanciar un CrossTrafficSpawn en esta ruta.
+  crossTraffic: [],
 };

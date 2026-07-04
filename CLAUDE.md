@@ -271,10 +271,6 @@ arriba), sin nada Pro que gatear todavía.
   ruta real instancia todavía una maniobra de estos tipos, así que no tienen efecto visible hoy.
 - Físicas de vehículo "de verdad" (motor de físicas de Babylon) — el controlador actual es
   cinemático, decisión deliberada hasta ahora, no una limitación técnica descubierta.
-- Cruces con prioridad entre el tráfico de IA de distintas calles (solo hay cesión de paso a
-  peatones, ver arriba; tampoco hay tráfico de IA en calles transversales todavía) — **bloqueado
-  en `ruta-01` hoy**: ver "Investigado y descartado" abajo, no hay ningún cruce sin semaforizar
-  verificable en esta ruta sobre el que construirlo.
 - Verificación del checkout de Stripe contra la API real (hoy solo probado con un fake HTTP
   inyectado en los tests del backend).
 - Rutas o circulación libre de la versión Pro — el gate de licencia ya existe (ver arriba), pero
@@ -297,7 +293,30 @@ Overpass de todo `way["highway"]` a <70m de sus coordenadas no devuelve ninguna 
 solo los propios tramos de Carrer de la Marina y la Gran Via ya asociada al cruce de wp0/wp1 — wp2
 es solo el punto de una ligera curva del trazado de Marina (headingDeg 314.9°→315.1°), no una
 intersección real. Los 5 cruces reales de `ruta-01` (Gran Via, Diputació, Consell de Cent,
-Diagonal, Aragó) ya están semaforizados (ver maniobras `traffic-light` arriba), así que **hoy no
-existe en esta ruta ningún cruce sin semaforizar sobre el que construir cesión de paso entre
-tráfico de IA de distintas calles** — haría falta una ruta nueva con un cruce real de ese tipo
-para desbloquear este punto.
+Diagonal, Aragó) ya están semaforizados (ver maniobras `traffic-light` arriba). Reverificado
+2026-07-04 con una búsqueda más amplia, no solo alrededor de wp2: todas las `way["highway"]`
+vehiculares (primary/secondary/tertiary/unclassified/residential) en el bbox de toda la ruta. Las
+dos calles reales más cercanas al trazado que no eran ya conocidas, Carrer de Sardenya y Carrer de
+Lepant, corren paralelas a Carrer de la Marina (mismo eje diagonal del Eixample), no la cruzan —
+confirmado por ausencia de nodos compartidos con ninguna de las 7 `way` de Marina. **Hoy no existe
+en `ruta-01` ningún cruce sin semaforizar** sobre el que construir cesión de paso entre tráfico de
+IA de distintas calles — haría falta una ruta nueva con un cruce real de ese tipo para que tenga
+efecto visible.
+
+**Infraestructura genérica construida igualmente** (2026-07-04, mismo patrón que `roundabout`
+antes de tener ruta real): `core/cross-traffic-ai.ts` modela un vehículo de tráfico transversal por
+`CrossTrafficSpawn` (nuevo campo `RouteDefinition.crossTraffic`, vacío en `ruta-01`) — sin estado
+propio, su posición es una función pura de `elapsedSimS` (mismo patrón que `getTrafficLightPhase`
+en `traffic-light.ts`, no un vaivén incremental como los peatones: un coche real cruza y sigue, no
+aparca en la otra acera y vuelve marcha atrás), en bucle continuo en un único sentido
+(`fromSide: 'left' | 'right'`, el otro lado de la calle transversal no está modelado). No se creó
+ningún `ManeuverType` nuevo: la maniobra `give-way` ya existente se generalizó (renombrando el
+parámetro de `updateGiveWayOutcomes` de `obstructedByPedestrian` a `obstructed`, sin cambiar la
+lógica — ya era genérica) para que el jugador ceda el paso a este tráfico transversal exactamente
+igual que ya cede el paso a un peatón, emparejando cada maniobra `give-way` con el `CrossTrafficSpawn`
+del mismo `atWaypointIndex` (`giveWayCrossTrafficIndices` en `main.ts`). Tiene colisión física con
+el jugador y el resto de vehículos de IA (se añade a `otherVehicleCorners` mientras `onCrossing`).
+**Limitación deliberada**: el tráfico transversal nunca cede el paso él mismo (tiene prioridad
+siempre) y no distingue R-1 (ceda el paso) de R-2 (stop) — el criterio es binario, igual que con
+peatones; tampoco modela la regla general de prioridad-a-la-derecha sin señal. `ruta-01` define
+`crossTraffic: []`, así que nada de esto tiene efecto visible hoy.
