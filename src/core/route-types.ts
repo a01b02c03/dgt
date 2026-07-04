@@ -52,6 +52,19 @@ export interface Maneuver {
   type: ManeuverType;
   atWaypointIndex: number;
   description: string;
+  /**
+   * Radio de disparo (m) de esta maniobra, si necesita uno distinto del global
+   * (TRIGGER_RADIUS_M = 20 en core/maneuver-tracker.ts). Motivación real: un
+   * cambio de sentido por glorieta de enlace de autovía (raqueta) tiene un
+   * radio de giro real de ~30m, así que dentro de un círculo de 20m solo se
+   * capturan ~85° de giro — geométricamente imposible acercarse a los 180°±45°
+   * que exige u-turn-evaluator.ts (haría falta un radio de giro real ≤18m).
+   * Medido con la geometría OSM real de las 3 raquetas de la C-31 en
+   * L'Hospitalet (2026-07-04, ver CLAUDE.md): con 40m+ las dos glorietas de
+   * enlace capturan ~163-172° y el criterio funciona. Mismo patrón
+   * evidencia-real que MIN_ROTATION_DEG en roundabout-evaluator.ts.
+   */
+  triggerRadiusM?: number;
 }
 
 /**

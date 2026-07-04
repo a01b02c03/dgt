@@ -50,4 +50,17 @@ describe('maneuver progress tracking', () => {
     progress = updateManeuverProgress(progress, waypointPositions, { x: 0, z: 100, speedMs: 8 });
     expect(progress[0].status).toBe('completed');
   });
+
+  it('honors a per-maneuver triggerRadiusM over the 20m default', () => {
+    const wideManeuvers: Maneuver[] = [
+      { type: 'u-turn', atWaypointIndex: 1, description: 'Cambio de sentido en glorieta', triggerRadiusM: 50 },
+    ];
+    let progress = createManeuverProgress(wideManeuvers);
+    // A 45m del waypoint: fuera del radio global de 20m, dentro del propio de 50m.
+    progress = updateManeuverProgress(progress, waypointPositions, { x: 0, z: 55, speedMs: 8 });
+    expect(progress[0].status).toBe('active');
+    // A 60m: fuera también del radio propio -> completed.
+    progress = updateManeuverProgress(progress, waypointPositions, { x: 0, z: 40, speedMs: 8 });
+    expect(progress[0].status).toBe('completed');
+  });
 });

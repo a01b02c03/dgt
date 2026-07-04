@@ -27,6 +27,7 @@ export interface VehicleSample {
   speedMs: number;
 }
 
+/** Radio de disparo por defecto; una maniobra puede pedir otro con Maneuver.triggerRadiusM (ver route-types.ts). */
 const TRIGGER_RADIUS_M = 20;
 
 export function createManeuverProgress(maneuvers: Maneuver[]): ManeuverProgress[] {
@@ -64,8 +65,9 @@ export function updateManeuverProgress(
     }
 
     const distance = Math.hypot(vehicle.x - target.x, vehicle.z - target.z);
+    const triggerRadiusM = entry.maneuver.triggerRadiusM ?? TRIGGER_RADIUS_M;
 
-    if (distance <= TRIGGER_RADIUS_M) {
+    if (distance <= triggerRadiusM) {
       const isNewClosest = distance < entry.closestDistanceM;
       return {
         ...entry,

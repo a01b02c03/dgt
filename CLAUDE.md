@@ -7,8 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 drive-test.eu: simulador de examen de conducción DGT en el navegador, con calles y señalización
 reales de Barcelona. Producto en fase inicial. Alcance de la versión gratuita: **una sola ruta**
 (`ruta-01`, Eixample). El gate de licencia Pro (backend PHP/MySQL/Stripe + panel frontend, ver
-"Gate de licencia Pro" abajo) ya protege contenido real: `ruta-02` (Plaça d'Espanya) es la primera
-ruta Pro (`isFree: false`) — ver "Estado y próximos pasos" abajo.
+"Gate de licencia Pro" abajo) ya protege contenido real: `ruta-02` (Plaça d'Espanya) y `ruta-03`
+(Zona Franca/C-31, ver abajo) son rutas Pro (`isFree: false`) — ver "Estado y próximos pasos" abajo.
 
 ## Comandos
 
@@ -47,7 +47,7 @@ debe leer estos datos en vez de hardcodear geometría en el código de escena.
 
 Punto único de verdad de qué rutas existen en el build. `routeRegistry` es la lista completa;
 `getFreeRoutes()` filtra por `isFree: true` (hoy: solo `ruta-01`); `getAccessibleRoutes(hasProAccess)`
-añade las rutas Pro (`isFree: false`, hoy: `ruta-02`) cuando el usuario tiene licencia activa —
+añade las rutas Pro (`isFree: false`, hoy: `ruta-02` y `ruta-03`) cuando el usuario tiene licencia activa —
 `main.ts` la usa para decidir qué rutas ofrecer, ver "Gate de licencia Pro" abajo.
 
 ### Rutas individuales (`src/routes/<id>/route.ts`)
@@ -62,16 +62,30 @@ Paral·lel → Carrer de Lleida (Eixample/Sant Antoni, 13 waypoints, ~580m) y 27
 límite de 30 km/h cerca del aparcamiento) se verificó y añadió el 2026-07-04 con el mismo método
 de datasets oficiales que `ruta-01` (ver "Estado y próximos pasos" y el comentario de cabecera de
 `ruta-02/route.ts`); el interior de la propia rotonda queda deliberadamente sin resolver (ver
-abajo). El método de verificación de cada dato está documentado en el comentario de cabecera de
-cada `route.ts` — consultarlo antes de asumir que un dato es aproximado.
+abajo). `ruta-03/route.ts` (segunda ruta Pro) es la primera ruta larga y de vía rápida: Passeig de
+la Zona Franca → Plaça d'Ildefons Cerdà → C-31 a 80 km/h → cambio de sentido en la glorieta del
+enlace Granvia L'Hospitalet → vuelta por Gran Via → Montjuïc (Carrer de La Foixarda), ~6.1km, 94
+waypoints, 228 edificios (`ruta-03/buildings.ts`, extraídos por corredor `around:60m` sobre la
+polilínea, no por bbox). Recorte de una ruta real documentada del examen de la zona "La Campana".
+Instancia 13 maniobras, incluidas la primera `u-turn` (con `triggerRadiusM: 50`, ver arriba) y una
+`parallel-park` junto a la zona azul real de Foixarda. Su tramo de L'Hospitalet (C-31 y glorieta)
+no tiene cobertura de los datasets oficiales de Barcelona — allí la señalización viene solo de tags
+OSM, desviación consciente documentada en su cabecera. El método de verificación de cada dato está
+documentado en el comentario de cabecera de cada `route.ts` — consultarlo antes de asumir que un
+dato es aproximado.
 
 Los 6 `ManeuverType` del modelo tienen ya criterios de evaluación pass/fail: `traffic-light`
 (`traffic-light.ts` + `traffic-light-evaluator.ts`), `u-turn` (`u-turn-evaluator.ts`), `parallel-park`
 (`parallel-park-evaluator.ts`), `roundabout` (`roundabout-evaluator.ts`), `give-way`
 (`give-way-evaluator.ts`) y `lane-change` (`lane-change-evaluator.ts`) — ver la cabecera de cada
 archivo para el criterio exacto. `traffic-light`, `give-way` y `lane-change` se usan en `ruta-01`;
-`roundabout` y `parallel-park` se usan en `ruta-02`; `u-turn` sigue conectado en el bucle de
-`main.ts` sin ninguna maniobra instanciada en ninguna ruta todavía. El criterio v1 de `roundabout`
+`roundabout` y `parallel-park` se usan en `ruta-02`; `u-turn` se instancia por primera vez en
+`ruta-03` (glorieta del enlace Granvia L'Hospitalet de la C-31) — desde `ruta-03`, los 6 tipos
+tienen maniobra real en alguna ruta. `Maneuver.triggerRadiusM` (opcional, ver su comentario en
+`route-types.ts`) permite a una maniobra concreta un radio de disparo distinto del global de 20m
+(`TRIGGER_RADIUS_M` en `maneuver-tracker.ts`): el u-turn de `ruta-03` necesita 50m porque en una
+glorieta real de ~30m de radio de giro, un círculo de 20m solo captura ~88° de rotación —
+geométricamente imposible acercarse a los 180°±45° que exige `u-turn-evaluator.ts`. El criterio v1 de `roundabout`
 es deliberadamente simplificado (gira a la izquierda lo suficiente, no se detiene sin necesidad, no
 sale de calzada ni colisiona) y NO evalúa si el vehículo cedió el paso al tráfico que ya circula por
 la rotonda — no hay IA de tráfico circulando en rotondas todavía (ver "IA de tráfico" abajo,
@@ -311,11 +325,22 @@ el detalle de qué se descartó y por qué. **Circulación libre Pro** (2026-07-
 licencia Pro" arriba): modo `'free'` en `createScene(route, mode)` — mundo simulado intacto, capa
 de examen desactivada, elegible por ruta en el selector con acceso Pro. Verificado en vivo en el
 navegador: cero eventos de maniobra conduciendo por puntos que en `'exam'` evalúan de inmediato, y
-el modo examen intacto en la misma build.
+el modo examen intacto en la misma build. **`ruta-03`** (2026-07-04, Zona Franca → Plaça Cerdà →
+C-31 → glorieta del enlace Granvia L'Hospitalet → Gran Via → Montjuïc/Foixarda, ~6.1km, 94
+waypoints): segunda ruta Pro, primera de vía rápida (80 km/h) y primera que instancia `u-turn` —
+completando los 6 `ManeuverType` con maniobra real en alguna ruta. Trazado validado con Dijkstra
+sobre el grafo dirigido real de OSM (ningún tramo contra el sentido de circulación); 13 maniobras
+(6 `traffic-light`, 4 `give-way`, `lane-change` en plena C-31, `u-turn` con el nuevo
+`Maneuver.triggerRadiusM: 50` — ver "Rutas individuales" arriba — y `parallel-park` en la zona azul
+real de Foixarda, dataset `trams-aparcament-superficie`); zona 20 real detectada por 4 señales
+R-301_20 que corrigen un `maxspeed=30` desactualizado de OSM (misma clase de corrección que
+Diputació/Lleida). El u-turn se verificó aprobable conduciendo la polilínea real por los
+evaluadores de verdad (rotación capturada ~-172° a -180° con radio 50m, patrón zzz-verify,
+test desechable ya borrado). Las 3 estructuras de cambio de sentido de la C-31 se compararon antes
+de elegir esta glorieta — el detalle completo, incluido el tramo de L'Hospitalet sin datasets
+oficiales, está en la cabecera de `ruta-03/route.ts`.
 
 **No implementado todavía**:
-- `u-turn` tiene criterio de evaluación (ver arriba) pero ninguna ruta real instancia todavía una
-  maniobra de este tipo, así que no tiene efecto visible hoy.
 - Físicas de vehículo "de verdad" (motor de físicas de Babylon) — el controlador actual es
   cinemático, decisión deliberada hasta ahora, no una limitación técnica descubierta.
 - Verificación del checkout de Stripe contra la API real (hoy solo probado con un fake HTTP
