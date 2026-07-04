@@ -113,7 +113,11 @@ puede ser otro coche de IA o el propio jugador — guardando `FOLLOWING_GAP_M`.
 `main.ts` se concatenan semáforos en rojo y peatones bloqueando en una sola lista antes de
 llamarla, sin que `traffic-ai.ts` necesite saber la diferencia entre ambos. Vehículos y offsets de
 aparición (`AI_VEHICLE_INITIAL_OFFSETS_M` en `main.ts`) son arbitrarios, no ligados a ningún dato
-real de tráfico de Barcelona.
+real de tráfico de Barcelona. Al superar el final del trazado, cada vehículo de IA (propio sentido
+y oncoming, cada uno sobre la longitud de su trazado) **recircula al arco 0** (2026-07-04): sin ese
+envolvimiento, `poseAtArcLength` los clampaba en el último waypoint y quedaban aparcados para
+siempre — visible en `ruta-02`, cuyo último waypoint es un semáforo (los coches se quedaban
+plantados en él aunque estuviera en verde) y además es la meta, que bloqueaban físicamente.
 
 **Carriles / sentido contrario** (`core/lanes.ts`): el sentido contrario siempre se modela con un
 único carril fijo, centrado en `±LANE_OFFSET_M` (1.5m, la mitad de `LANE_WIDTH_M`) respecto al eje de
@@ -339,6 +343,16 @@ evaluadores de verdad (rotación capturada ~-172° a -180° con radio 50m, patr�
 test desechable ya borrado). Las 3 estructuras de cambio de sentido de la C-31 se compararon antes
 de elegir esta glorieta — el detalle completo, incluido el tramo de L'Hospitalet sin datasets
 oficiales, está en la cabecera de `ruta-03/route.ts`.
+
+**Primera sesión de pruebas en vivo como Pro** (2026-07-04, con una licencia real de la BD local —
+ver `backend/README.md` para el entorno local): destapó y se corrigieron 3 defectos: (1) la
+`FollowCamera` de Babylon traía las flechas asignadas de fábrica (↑/↓ altura, ←/→ rotación) y se
+las disputaba a `keyboard-input.ts` — se le quitó la entrada de teclado (`removeByType`), conserva
+ratón/rueda; (2) la pantalla de resultado no tenía forma de reiniciar — botón "Volver a empezar"
+(`exam-result-screen.ts` recibe `onRestart`, hoy `window.location.reload()`); (3) los vehículos de
+IA quedaban aparcados para siempre al acabar el trazado — ahora recirculan (ver "IA de tráfico"
+arriba). La conducción completa de `ruta-03` en vivo (rendimiento con 94 waypoints/228 edificios,
+sensación de los 80 km/h, u-turn en la glorieta) quedó pendiente de esa sesión.
 
 **No implementado todavía**:
 - Físicas de vehículo "de verdad" (motor de físicas de Babylon) — el controlador actual es

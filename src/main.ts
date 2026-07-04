@@ -209,6 +209,10 @@ function createScene(route: RouteDefinition, mode: DriveMode): Scene {
   camera.cameraAcceleration = 0.05;
   camera.maxCameraSpeed = 20;
   camera.attachControl(true);
+  // La FollowCamera trae las flechas asignadas de fábrica (↑/↓ altura, ←/→
+  // rotación) y se las disputaría a keyboard-input.ts, que las usa para
+  // conducir: solo se le deja ratón/rueda.
+  camera.inputs.removeByType('FollowCameraKeyboardMoveInput');
 
   buildSignMarkers(route, origin, scene);
 
@@ -361,7 +365,7 @@ function createScene(route: RouteDefinition, mode: DriveMode): Scene {
     maneuverProgress.forEach((entry, index) => hud.setManeuverState(index, maneuverChecklistLabel(entry)));
   }
 
-  const examResultScreen = buildExamResultScreen();
+  const examResultScreen = buildExamResultScreen(() => window.location.reload());
   const lastWaypointLocal = routePoints[routePoints.length - 1];
 
   const getInput = attachKeyboardInput();
@@ -666,7 +670,16 @@ function createScene(route: RouteDefinition, mode: DriveMode): Scene {
       // jugador): se descarta el estado candidato y se mantiene la posición
       // previa con velocidad 0.
       const previousState = vehicle.state;
-      const candidateState = stepAiVehicle(previousState, { speedLimitMs, stopLineArcM }, dtSeconds);
+      const steppedState = stepAiVehicle(previousState, { speedLimitMs, stopLineArcM }, dtSeconds);
+      // El trazado no es un circuito, pero el tráfico ambiente sí recircula:
+      // sin este envolvimiento, al superar el último waypoint poseAtArcLength
+      // clampa la pose ahí y el coche queda aparcado para siempre — bloqueando
+      // la meta al jugador y, si el waypoint final tiene semáforo (wp12 de
+      // ruta-02), plantado en él aunque esté en verde.
+      const candidateState =
+        steppedState.distanceAlongRouteM >= routeLengthM
+          ? { ...steppedState, distanceAlongRouteM: steppedState.distanceAlongRouteM - routeLengthM }
+          : steppedState;
       const candidatePose = offsetPoseToLane(
         poseAtArcLength(routePoints, arcLengthTable, candidateState.distanceAlongRouteM),
         laneOffsetM(vehicle.laneIndex, laneCount),
@@ -734,7 +747,14 @@ function createScene(route: RouteDefinition, mode: DriveMode): Scene {
       // arriba (otherVehicleCorners cubre ambos sentidos, el índice de este
       // vehículo dentro de ese snapshot combinado es aiVehicles.length + index).
       const previousState = vehicle.state;
-      const candidateState = stepAiVehicle(previousState, { speedLimitMs, stopLineArcM }, dtSeconds);
+      const steppedState = stepAiVehicle(previousState, { speedLimitMs, stopLineArcM }, dtSeconds);
+      // Mismo envolvimiento de fin de trazado que en aiVehicles.forEach arriba,
+      // sobre la longitud del sub-trazado invertido de oncomingRoute.
+      const oncomingLengthM = oncomingArcLengthTable[oncomingArcLengthTable.length - 1];
+      const candidateState =
+        steppedState.distanceAlongRouteM >= oncomingLengthM
+          ? { ...steppedState, distanceAlongRouteM: steppedState.distanceAlongRouteM - oncomingLengthM }
+          : steppedState;
       const candidatePose = offsetPoseToLane(
         poseAtArcLength(oncomingRoute.points, oncomingArcLengthTable, candidateState.distanceAlongRouteM),
         LANE_OFFSET_M,

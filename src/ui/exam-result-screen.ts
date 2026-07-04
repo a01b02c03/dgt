@@ -15,12 +15,16 @@ const OUTCOME_BADGE_TEXT: Record<ExamOutcome, string> = {
  * se muestra una única vez que `main.ts` decide el veredicto agregado (ver
  * core/exam-result.ts). Reutiliza las clases `hud-maneuver*` de index.html
  * para listar el estado final de cada maniobra con el mismo lenguaje visual
- * que el checklist en vivo del HUD.
+ * que el checklist en vivo del HUD. `onRestart` lo aporta `main.ts` (hoy:
+ * recargar la página, que devuelve al selector de ruta con acceso Pro o
+ * directo a ruta-01 en gratuito) — la pantalla no decide qué significa
+ * "volver a empezar".
  */
-export function buildExamResultScreen(): ExamResultScreen {
+export function buildExamResultScreen(onRestart: () => void): ExamResultScreen {
   const containerEl = requireElement('exam-result');
   const badgeEl = requireElement('exam-result-badge');
   const listEl = requireElement('exam-result-maneuvers');
+  requireElement('exam-result-restart').addEventListener('click', onRestart);
 
   return {
     show(outcome, maneuverLabels) {

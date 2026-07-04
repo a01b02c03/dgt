@@ -92,6 +92,15 @@
       #exam-result-badge.exam-result-badge--pass { background: #2fae5c; color: #04220f; }
       #exam-result-badge.exam-result-badge--fail { background: #d1452f; color: #240600; }
       #exam-result-maneuvers { list-style: none; margin: 0; padding: 0; width: 100%; max-width: 320px; }
+      #exam-result-restart {
+        padding: 10px 24px;
+        border-radius: 8px;
+        border: none;
+        background: #4a7fd1;
+        color: #fff;
+        font-size: 15px;
+        cursor: pointer;
+      }
 
       #route-select {
         position: absolute;
@@ -144,6 +153,7 @@
       <div id="exam-result" hidden>
         <span id="exam-result-badge"></span>
         <ul id="exam-result-maneuvers"></ul>
+        <button id="exam-result-restart" type="button">Volver a empezar</button>
       </div>
       <div id="route-select" hidden>
         <h2>Elige ruta</h2>
