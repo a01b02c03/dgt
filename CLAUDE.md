@@ -61,22 +61,21 @@ extruidos desde sus huellas OSM (`src/routes/ruta-01/buildings.ts`). El método 
 cada dato (señales, semáforos, exclusión de cruces ambiguos) está documentado en el comentario de
 cabecera de `route.ts` — consultarlo antes de asumir que un dato es aproximado.
 
-De los 6 `ManeuverType` del modelo, `traffic-light` (`traffic-light.ts` + `traffic-light-evaluator.ts`),
-`u-turn` (`u-turn-evaluator.ts`), `parallel-park` (`parallel-park-evaluator.ts`), `roundabout`
-(`roundabout-evaluator.ts`) y `give-way` (`give-way-evaluator.ts`) tienen ya criterios de evaluación
-pass/fail — ver la cabecera de cada archivo para el criterio exacto. `traffic-light` y `give-way` se
-usan hoy en `ruta-01`; `u-turn`, `parallel-park` y `roundabout` están conectados en el bucle de
-`main.ts` pero sin ninguna maniobra instanciada en ninguna ruta todavía, así que no tienen efecto
-visible hasta que una ruta real los use. El criterio v1 de `roundabout` es deliberadamente
-simplificado (gira a la izquierda lo suficiente, no se detiene sin necesidad, no sale de calzada ni
-colisiona) y NO evalúa si el vehículo cedió el paso al tráfico que ya circula por la rotonda — no
-hay IA de tráfico circulando en rotondas todavía (ver "IA de tráfico" abajo, `traffic-ai.ts` sigue
-un trazado lineal, no un óvalo).
-`lane-change` sigue sin criterio: el modelo de datos y la IA ya soportan varios carriles en el mismo
-sentido (`Waypoint.ownDirectionLanes`, ver "IA de tráfico" abajo), pero ninguna ruta real tiene hoy
-un tramo con más de un carril por sentido sobre el que anclar la maniobra — `ruta-01` es de un solo
-carril por sentido en todo su recorrido (ver el comentario de cabecera de `route.ts`) — ver "Estado
-y próximos pasos".
+Los 6 `ManeuverType` del modelo tienen ya criterios de evaluación pass/fail: `traffic-light`
+(`traffic-light.ts` + `traffic-light-evaluator.ts`), `u-turn` (`u-turn-evaluator.ts`), `parallel-park`
+(`parallel-park-evaluator.ts`), `roundabout` (`roundabout-evaluator.ts`), `give-way`
+(`give-way-evaluator.ts`) y `lane-change` (`lane-change-evaluator.ts`) — ver la cabecera de cada
+archivo para el criterio exacto. `traffic-light`, `give-way` y `lane-change` se usan hoy en
+`ruta-01`; `u-turn`, `parallel-park` y `roundabout` están conectados en el bucle de `main.ts` pero
+sin ninguna maniobra instanciada en ninguna ruta todavía, así que no tienen efecto visible hasta que
+una ruta real los use. El criterio v1 de `roundabout` es deliberadamente simplificado (gira a la
+izquierda lo suficiente, no se detiene sin necesidad, no sale de calzada ni colisiona) y NO evalúa si
+el vehículo cedió el paso al tráfico que ya circula por la rotonda — no hay IA de tráfico circulando
+en rotondas todavía (ver "IA de tráfico" abajo, `traffic-ai.ts` sigue un trazado lineal, no un
+óvalo). El criterio v1 de `lane-change` (anclado a wp2 de `ruta-01`, ver el comentario de cabecera de
+`route.ts`) es igual de simplificado: el carril de salida debe ser distinto y adyacente (±1) al de
+entrada, sin salir de calzada ni colisionar — NO evalúa uso de intermitente ni comprobación de
+retrovisor (ninguno de los dos está modelado).
 
 ### IA de tráfico (`src/core/traffic-ai.ts`, `src/core/pedestrian-ai.ts`)
 
@@ -94,9 +93,12 @@ llamarla, sin que `traffic-ai.ts` necesite saber la diferencia entre ambos. Veh�
 aparición (`AI_VEHICLE_INITIAL_OFFSETS_M` en `main.ts`) son arbitrarios, no ligados a ningún dato
 real de tráfico de Barcelona.
 
-**Carriles / sentido contrario** (`core/lanes.ts`): la calzada de `ROAD_WIDTH_M` (6m) se divide en
-dos mitades de 3m, una por sentido, centradas en `±LANE_OFFSET_M` (1.5m) — `offsetPoseToLane`
-desplaza cualquier pose lateralmente respecto a su propio rumbo (así que para un vehículo en
+**Carriles / sentido contrario** (`core/lanes.ts`): el sentido contrario siempre se modela con un
+único carril fijo, centrado en `±LANE_OFFSET_M` (1.5m, la mitad de `LANE_WIDTH_M`) respecto al eje de
+la calzada, sea cual sea el número de carriles reales del propio sentido en ese tramo (`laneOffsetM`
+generaliza ese mismo desplazamiento a varios carriles propios, ver "Varios carriles en el mismo
+sentido" más abajo) — `offsetPoseToLane` desplaza cualquier pose lateralmente respecto a su propio
+rumbo (así que para un vehículo en
 sentido contrario, cuyo rumbo ya sale invertido de fábrica, "a la derecha" ya es su derecha real
 sin ningún caso especial). El tráfico en sentido contrario reutiliza toda la lógica de
 `traffic-ai.ts` (frenada ante rojo, distancia de seguridad) sobre un sub-trazado invertido
@@ -121,25 +123,35 @@ disponible (`laneOffsetM` clampa el índice) en vez de fusionarse de forma reali
 seguimiento (`leadVehicleArcM` en `traffic-ai.ts`) ahora es por carril: un vehículo solo frena por el
 que tiene delante en su propio carril, no por todo el tráfico de su sentido — el carril "actual" del
 jugador (que se mueve libre en 2D, no por carril fijo) se deriva de su desplazamiento lateral
-(`laneIndexFromLateralOffsetM`) solo para saber si bloquea a la IA que le sigue. **Ninguna ruta real
-tiene hoy más de un carril por sentido** (`ruta-01` tiene `ownDirectionLanes: 1` en todos sus
-waypoints, ver el comentario de cabecera de `route.ts`), así que este modelo se comporta hoy
-exactamente igual que el carril único de antes — infraestructura lista para una ruta futura, mismo
-patrón que `roundabout` (ver arriba). `road-mesh.ts` (ancho visual de la calzada) y
-`road-bounds.ts` (detección de salida de calzada) ya derivan el ancho de `ownDirectionLanes` en vez
-de un `ROAD_WIDTH_M` fijo: `roadWidthMAtSegment` (`core/lanes.ts`) calcula, por tramo, `carriles del
-propio sentido × LANE_WIDTH_M` más un carril más de sentido contrario si `twoWay` — la misma cinta
-(`road-mesh.ts`) se estrecha/ensancha exactamente en los waypoints donde cambia `twoWay`/
-`ownDirectionLanes`, y `queryRoadBounds` (`core/road-bounds.ts`) recibe ahora una función
-`(segmentIndex) => anchoM` en vez de un número, consultada solo con el segmento ya elegido (la
-búsqueda del segmento más cercano sigue siendo puramente geométrica). En `ruta-01` esto ya cambia el
-comportamiento visible: el tramo de sentido único (wp3 en adelante) pasa de 6m a 3m de ancho — antes
-`ROAD_WIDTH_M` se aplicaba de forma uniforme en toda la ruta sin distinguir `twoWay`. El ancho por el
-que cruzan los peatones (`PEDESTRIAN_CROSSING_MARGIN_M` en `main.ts`) también se deriva ahora por
-cruce (antes un valor global compartido), para no desalinear a los peatones de wp5/wp6 (en el tramo
-más estrecho) respecto a la nueva calzada. **No habilita `lane-change` todavía**: el modelo existe
-pero no hay ninguna ruta con un tramo real de varios carriles sobre el que anclar la maniobra (ver
-arriba).
+(`laneIndexFromLateralOffsetM`) solo para saber si bloquea a la IA que le sigue.
+
+**`ruta-01` sí tiene varios carriles por sentido, en todo su recorrido** — corrección sobre una
+afirmación anterior de este documento, que daba `ownDirectionLanes: 1` en todos los waypoints porque
+solo se había verificado el tag `oneway` de cada `way["highway"="primary"]`, no `lanes`/
+`lanes:forward`/`lanes:backward`. Reverificado por Overpass (mismo método que el resto de
+`route.ts`), con el orden de nodos de cada `way` confirmado contra el sentido de la ruta: wp0→wp1
+tiene 3 carriles propios (`lanes:forward=3`), wp1→wp2 y wp2→wp3 tienen 5 cada uno, y los tres tramos
+de sentido único (wp3→wp4, wp4→wp5, wp5→wp6) tienen 5 carriles cada uno — ver el comentario de
+cabecera de `route.ts` para el detalle por `way`. El carril "contrario" de los tres tramos de doble
+sentido es en realidad un carril bus-designated (`bus:lanes:backward=designated`), no un carril de
+coche genérico — el tráfico en sentido contrario de este documento (arriba) ya lo trata como un
+carril de coche normal, simplificación preexistente que esta corrección hace más visible pero no
+resuelve.
+
+`road-mesh.ts` (ancho visual de la calzada) y `road-bounds.ts` (detección de salida de calzada)
+derivan el ancho de `ownDirectionLanes` en vez de un `ROAD_WIDTH_M` fijo: `roadWidthMAtSegment`
+(`core/lanes.ts`) calcula, por tramo, `carriles del propio sentido × LANE_WIDTH_M` más un carril más
+de sentido contrario si `twoWay` — la misma cinta (`road-mesh.ts`) se estrecha/ensancha exactamente
+en los waypoints donde cambia `twoWay`/`ownDirectionLanes`, y `queryRoadBounds`
+(`core/road-bounds.ts`) recibe una función `(segmentIndex) => anchoM` en vez de un número, consultada
+solo con el segmento ya elegido (la búsqueda del segmento más cercano sigue siendo puramente
+geométrica). Con los carriles reales de `ruta-01` esto da una calzada de 12-18m según el tramo (antes
+6m fijos en toda la ruta) — mucho más ancha, y más realista frente a las fachadas reales de los 326
+edificios ya extruidos (ver arriba), que están a su distancia real de la vía. El ancho por el que
+cruzan los peatones (`PEDESTRIAN_CROSSING_MARGIN_M` en `main.ts`) también se deriva por cruce (antes
+un valor global compartido), para no desalinear a los peatones de wp5/wp6 respecto a la calzada real
+en su tramo. **Esto desbloqueó `lane-change`** (ver arriba): `ruta-01` ya ancla una maniobra de este
+tipo en wp2, con carriles de sobra a ambos lados del waypoint.
 
 **Peatones** (`pedestrian-ai.ts`): un peatón por cada `SignPlacement` de tipo `pedestrian-crossing`
 de la ruta, cruzando en línea recta perpendicular a la calzada en ese punto (`pedestrianPose`),
@@ -234,9 +246,11 @@ despliegue en Freehostia (PHP 8.4 + MySQL 8) y el contrato de los 5 endpoints.
 de `ruta-01` + mallas de calle/edificios (`src/scene/road-mesh.ts`, `building-mesh.ts`), vehículo
 con controlador **cinemático** (no motor de físicas — `src/scene/vehicle-controller.ts`) e input de
 teclado (`keyboard-input.ts`), colisión bloqueante con edificios, vehículos de IA y peatones
-(`core/collision.ts`), detección de salida de calzada no bloqueante (`core/road-bounds.ts`),
-señalización real, maniobras de semáforo, cambio de sentido, aparcamiento y rotonda con evaluación
-pass/fail, un primer HUD (velocímetro + checklist de maniobras, `src/ui/hud.ts` + `core/hud.ts`), una pantalla
+(`core/collision.ts`), detección de salida de calzada no bloqueante (`core/road-bounds.ts`, con
+ancho de calzada derivado de `ownDirectionLanes` por tramo, ver "IA de tráfico" arriba), señalización
+real, maniobras de semáforo, cambio de sentido, aparcamiento, rotonda y cambio de carril con
+evaluación pass/fail (los 6 `ManeuverType` del modelo ya tienen criterio, ver arriba — `traffic-light`,
+`give-way` y `lane-change` instanciados en `ruta-01`), un primer HUD (velocímetro + checklist de maniobras, `src/ui/hud.ts` + `core/hud.ts`), una pantalla
 final de resultado del examen
 (`core/exam-result.ts` + `src/ui/exam-result-screen.ts`): veredicto agregado apto/no apto —
 `'fail'` en cuanto cualquier maniobra evaluada falla (como una falta eliminatoria real, no hace
@@ -253,12 +267,8 @@ fallan si el jugador cruza con el peatón todavía en la calzada. Gate de licenc
 arriba), sin nada Pro que gatear todavía.
 
 **No implementado todavía**:
-- Criterio de evaluación para `lane-change` (el único `ManeuverType` sin lógica; `roundabout` ya la
-  tiene desde ahora, ver arriba). El modelo de varios carriles en el mismo sentido ya existe
-  (`Waypoint.ownDirectionLanes`, `core/lanes.ts`, ver "IA de tráfico" arriba), así que ya no es eso
-  lo que bloquea `lane-change`: falta una ruta real con un tramo de varios carriles sobre el que
-  anclar la maniobra — `ruta-01` es de un solo carril por sentido en todo su recorrido. De los 5
-  tipos con criterio, solo `traffic-light` y `give-way` se usan en una ruta real hoy.
+- `u-turn`, `parallel-park` y `roundabout` tienen criterio de evaluación (ver arriba) pero ninguna
+  ruta real instancia todavía una maniobra de estos tipos, así que no tienen efecto visible hoy.
 - Físicas de vehículo "de verdad" (motor de físicas de Babylon) — el controlador actual es
   cinemático, decisión deliberada hasta ahora, no una limitación técnica descubierta.
 - Cruces con prioridad entre el tráfico de IA de distintas calles (solo hay cesión de paso a

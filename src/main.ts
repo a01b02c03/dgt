@@ -17,6 +17,7 @@ import { licenseStatusView } from './core/license';
 import { activateLicense, fetchSessionStatus, requestCheckout, validateLicense } from './license/api';
 import { getOrCreateDeviceId, readStoredLicense, writeStoredLicense } from './license/storage';
 import { createGiveWayEvalState, updateGiveWayOutcomes } from './core/give-way-evaluator';
+import { createLaneChangeEvalState, updateLaneChangeOutcomes } from './core/lane-change-evaluator';
 import { createManeuverProgress, updateManeuverProgress } from './core/maneuver-tracker';
 import { createParallelParkEvalState, updateParallelParkOutcomes } from './core/parallel-park-evaluator';
 import { createRoundaboutEvalState, updateRoundaboutOutcomes } from './core/roundabout-evaluator';
@@ -313,6 +314,7 @@ function createScene(): Scene {
   let uTurnEvalState = createUTurnEvalState(freeRoute.maneuvers.length);
   let parallelParkEvalState = createParallelParkEvalState(freeRoute.maneuvers.length);
   let roundaboutEvalState = createRoundaboutEvalState(freeRoute.maneuvers.length);
+  let laneChangeEvalState = createLaneChangeEvalState(freeRoute.maneuvers.length);
 
   const hud = buildHud(freeRoute.maneuvers);
   maneuverProgress.forEach((entry, index) => hud.setManeuverState(index, maneuverChecklistLabel(entry)));
@@ -383,6 +385,14 @@ function createScene(): Scene {
     }
 
     hud.setSpeed(speedMsToKmh(vehicleState.speedMs), currentSpeedLimitKmh(freeRoute.waypoints, bounds.segmentIndex));
+
+    // El jugador no tiene un carril fijo (se mueve libre en 2D, ver
+    // vehicle-controller.ts), así que su carril "actual" se deriva de su
+    // desplazamiento lateral respecto al eje — usado más abajo tanto para la
+    // evaluación de la maniobra lane-change como para saber si el jugador
+    // bloquea a un vehículo de IA que le siga por detrás en ese carril.
+    const playerLaneCount = ownDirectionLaneCount(freeRoute.waypoints, bounds.segmentIndex);
+    const playerLaneIndex = laneIndexFromLateralOffsetM(bounds.lateralOffsetM, playerLaneCount);
 
     // Seguimiento de progreso de maniobras: solo registra métricas (todavía no
     // evalúa si se ejecutaron correctamente, eso requiere criterios de examen).
@@ -504,6 +514,30 @@ function createScene(): Scene {
       console.log(`Maniobra "${entry.maneuver.description}": outcome ${entry.outcome}`);
     });
 
+    // Evaluación pass/fail de maniobras lane-change (ver
+    // lane-change-evaluator.ts): criterio = el carril de salida es distinto y
+    // adyacente al de entrada, sin salir de calzada ni colisionar. A
+    // diferencia de u-turn/parallel-park/roundabout de arriba, ruta-01 ya
+    // instancia una de estas (wp2, ver CLAUDE.md) gracias al ownDirectionLanes
+    // real verificado en cada tramo de Carrer de la Marina.
+    const previousLaneChangeOutcomes = maneuverProgress.map((entry) => entry.outcome);
+    const laneChangeResult = updateLaneChangeOutcomes(
+      maneuverProgress,
+      laneChangeEvalState,
+      { laneIndex: playerLaneIndex },
+      bounds.onRoad,
+      anyCollision,
+    );
+    maneuverProgress = laneChangeResult.progress;
+    laneChangeEvalState = laneChangeResult.evalState;
+    maneuverProgress.forEach((entry, index) => {
+      if (entry.outcome === previousLaneChangeOutcomes[index]) {
+        return;
+      }
+      hud.setManeuverState(index, maneuverChecklistLabel(entry));
+      console.log(`Maniobra "${entry.maneuver.description}": outcome ${entry.outcome}`);
+    });
+
     // Semáforos: recoloreado continuo (no solo en transición), según la fase actual.
     trafficLightMarkers.forEach((marker) => {
       const maneuver = freeRoute.maneuvers[marker.maneuverIndex];
@@ -530,12 +564,6 @@ function createScene(): Scene {
       .map((maneuver) => arcLengthTable[maneuver.atWaypointIndex]);
     const stopPointArcLengths = [...redLightArcLengths, ...blockingPedestrianForwardArcs];
     const playerArcM = estimateArcLength(routePoints, arcLengthTable, { x: vehicleState.x, z: vehicleState.z });
-    // El jugador no tiene un carril fijo (se mueve libre en 2D, ver
-    // vehicle-controller.ts), así que su carril "actual" se deriva de su
-    // desplazamiento lateral respecto al eje — solo importa para saber si
-    // bloquea a un vehículo de IA que le siga por detrás en ese carril.
-    const playerLaneCount = ownDirectionLaneCount(freeRoute.waypoints, bounds.segmentIndex);
-    const playerLaneIndex = laneIndexFromLateralOffsetM(bounds.lateralOffsetM, playerLaneCount);
     const aiArcsBeforeStep = aiVehicles.map((vehicle) => vehicle.state.distanceAlongRouteM);
 
     aiVehicles.forEach((vehicle, index) => {

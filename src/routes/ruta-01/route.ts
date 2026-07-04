@@ -105,11 +105,24 @@ import type { RouteDefinition } from '../../core/route-types';
  * wp4 más arriba, que marca justo este cambio. No hay tramos de doble sentido
  * más allá de wp3 en esta ruta.
  *
- * `ownDirectionLanes` es 1 en todos los waypoints: Carrer de la Marina es de
- * un único carril por sentido en todo su recorrido (mismos `way["highway"]`
- * de OSM verificados arriba para `twoWay`, ninguno con más de un carril
- * marcado), así que el modelo de varios carriles de core/lanes.ts no tiene
- * ningún efecto visible en esta ruta — ver CLAUDE.md.
+ * `ownDirectionLanes` viene de los tags `lanes`/`lanes:forward`/`lanes:backward` de los
+ * mismos `way["highway"="primary"]` ya verificados arriba para `twoWay` (Overpass, misma
+ * consulta): Carrer de la Marina NO es de un único carril por sentido — corrección sobre
+ * una afirmación anterior de este archivo/CLAUDE.md que solo había comprobado `oneway`, no
+ * el número de carriles. Para los tramos de doble sentido se comprobó también que el orden
+ * de nodos de cada `way` (Overpass `out geom`) coincide con el sentido wp→wp+1 de la ruta,
+ * no al revés, así que `lanes:forward` es el propio sentido:
+ * - wp0→wp1 (44029286): `lanes=4`, `lanes:forward=3`, `lanes:backward=1` → ownDirectionLanes 3.
+ * - wp1→wp2 (237521097): `lanes=6`, `lanes:forward=5`, `lanes:backward=1` → ownDirectionLanes 5.
+ * - wp2→wp3 (490667333): `lanes=6`, `lanes:forward=5`, `lanes:backward=1` → ownDirectionLanes 5.
+ * - wp3→wp4 (237519393, oneway=yes): `lanes=5` → ownDirectionLanes 5.
+ * - wp4→wp5 (165522954/674507833, oneway=yes): `lanes=5` en ambos → ownDirectionLanes 5.
+ * - wp5→wp6 (313379198, oneway=yes): `lanes=5` → ownDirectionLanes 5.
+ * El carril "backward" de los tres tramos de doble sentido es en realidad un carril
+ * bus-designated (`bus:lanes:backward=designated`), no un carril de coche genérico —
+ * simplificación preexistente del tráfico en sentido contrario (core/traffic-ai.ts lo trata
+ * como un carril de coche normal) que esta corrección hace más visible pero no crea ni
+ * resuelve, ver CLAUDE.md.
  *
  * Maniobras `give-way` (criterio en core/give-way-evaluator.ts): una por cada
  * paso de peatones real verificado arriba, anclada al mismo waypoint que se
@@ -118,6 +131,13 @@ import type { RouteDefinition } from '../../core/route-types';
  * waypoint de la maniobra", así que reutilizar el mismo waypoint que ya
  * identificaba a cada paso es lo que hace que ese emparejamiento resuelva al
  * peatón correcto.
+ *
+ * Maniobra `lane-change` (criterio en core/lane-change-evaluator.ts): anclada a wp2, el
+ * único waypoint sin otra maniobra ya asignada (no cae en un cruce semaforizado ni en un
+ * paso de peatones real, ver la investigación de wp2 como cruce sin semaforizar más arriba)
+ * y con carriles reales de sobra a ambos lados (wp1→wp2 y wp2→wp3 tienen 5 carriles propios
+ * cada uno, ver arriba) — el jugador puede cambiar de carril con margen sin que el número de
+ * carriles cambie a mitad de la maniobra.
  */
 export const ruta01: RouteDefinition = {
   id: 'ruta-01',
@@ -125,13 +145,13 @@ export const ruta01: RouteDefinition = {
   city: 'Barcelona',
   isFree: true,
   waypoints: [
-    { position: { lat: 41.3991287, lon: 2.1812288 }, headingDeg: 317.4, speedLimitKmh: 50, twoWay: true, ownDirectionLanes: 1 },
-    { position: { lat: 41.3992773, lon: 2.1810465 }, headingDeg: 314.9, speedLimitKmh: 50, twoWay: true, ownDirectionLanes: 1 },
-    { position: { lat: 41.3996031, lon: 2.1806113 }, headingDeg: 315.1, speedLimitKmh: 50, twoWay: true, ownDirectionLanes: 1 },
-    { position: { lat: 41.4000834, lon: 2.1799739 }, headingDeg: 315.6, speedLimitKmh: 30, twoWay: false, ownDirectionLanes: 1 },
-    { position: { lat: 41.4008045, lon: 2.179034 }, headingDeg: 322.0, speedLimitKmh: 30, twoWay: false, ownDirectionLanes: 1 },
-    { position: { lat: 41.4014084, lon: 2.1784059 }, headingDeg: 318.8, speedLimitKmh: 30, twoWay: false, ownDirectionLanes: 1 },
-    { position: { lat: 41.4018988, lon: 2.1778328 }, headingDeg: 318.8, speedLimitKmh: 30, twoWay: false, ownDirectionLanes: 1 },
+    { position: { lat: 41.3991287, lon: 2.1812288 }, headingDeg: 317.4, speedLimitKmh: 50, twoWay: true, ownDirectionLanes: 3 },
+    { position: { lat: 41.3992773, lon: 2.1810465 }, headingDeg: 314.9, speedLimitKmh: 50, twoWay: true, ownDirectionLanes: 5 },
+    { position: { lat: 41.3996031, lon: 2.1806113 }, headingDeg: 315.1, speedLimitKmh: 50, twoWay: true, ownDirectionLanes: 5 },
+    { position: { lat: 41.4000834, lon: 2.1799739 }, headingDeg: 315.6, speedLimitKmh: 30, twoWay: false, ownDirectionLanes: 5 },
+    { position: { lat: 41.4008045, lon: 2.179034 }, headingDeg: 322.0, speedLimitKmh: 30, twoWay: false, ownDirectionLanes: 5 },
+    { position: { lat: 41.4014084, lon: 2.1784059 }, headingDeg: 318.8, speedLimitKmh: 30, twoWay: false, ownDirectionLanes: 5 },
+    { position: { lat: 41.4018988, lon: 2.1778328 }, headingDeg: 318.8, speedLimitKmh: 30, twoWay: false, ownDirectionLanes: 5 },
   ],
   signs: [
     {
@@ -201,6 +221,11 @@ export const ruta01: RouteDefinition = {
       type: 'give-way',
       atWaypointIndex: 6,
       description: "Paso de peatones cerca de Carrer d'Aragó",
+    },
+    {
+      type: 'lane-change',
+      atWaypointIndex: 2,
+      description: 'Cambio de carril en Carrer de la Marina',
     },
   ],
 };
