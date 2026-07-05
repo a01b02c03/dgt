@@ -320,6 +320,16 @@ function createScene(route: RouteDefinition, mode: DriveMode): Scene {
     return bestIndex;
   });
 
+  // Origen de la línea de evaluación de cada give-way: la posición real del
+  // paso de cebra emparejado, no el waypoint de la maniobra — en ruta-01 los
+  // pasos reales quedan a 10-27m de su waypoint (ver el comentario de
+  // updateGiveWayOutcomes en give-way-evaluator.ts). Las maniobras sin peatón
+  // emparejado (p. ej. las de tráfico transversal) quedan en null y caen al
+  // waypoint de siempre.
+  const giveWayLineOrigins: ({ x: number; z: number } | null)[] = giveWayPedestrianIndices.map(
+    (pedestrianIndex) => (pedestrianIndex !== null ? pedestrians[pedestrianIndex].crossing.position : null),
+  );
+
   // Tráfico de IA transversal: uno por cada CrossTrafficSpawn de la ruta (ver
   // core/cross-traffic-ai.ts) — infraestructura genérica, ruta-01 no define
   // ninguno todavía (ver CLAUDE.md), así que este array queda vacío en la
@@ -372,10 +382,21 @@ function createScene(route: RouteDefinition, mode: DriveMode): Scene {
   let wasOnRoad = true;
   let wasColliding = false;
   let elapsedSimS = 0;
+  let simStarted = false;
   let reachedFinish = false;
   let examOutcomeShown: ReturnType<typeof examOutcome> = null;
   scene.onBeforeRenderObservable.add(() => {
-    const dtSeconds = engine.getDeltaTime() / 1000;
+    const input = getInput();
+    // La simulación entera queda congelada (dt=0: semáforos, peatones, IA)
+    // hasta el primer input de conducción del jugador. Sin esto, el jugador
+    // aparece justo sobre la línea de stop del semáforo de wp0 (ruta-01), con
+    // el marcador encima de su cabeza donde no puede verlo, y el ciclo corre
+    // mientras se orienta: si tardaba >9s en arrancar, cruzaba en rojo un
+    // semáforo invisible nada más moverse. Congelando el reloj, el semáforo
+    // de wp0 (desfase 0 => verde los primeros 6s) está siempre recién puesto
+    // en verde en el momento de arrancar.
+    simStarted ||= input.throttle !== 0 || input.steering !== 0;
+    const dtSeconds = simStarted ? engine.getDeltaTime() / 1000 : 0;
     elapsedSimS += dtSeconds;
 
     // Tráfico transversal: sin estado propio (ver core/cross-traffic-ai.ts),
@@ -391,7 +412,7 @@ function createScene(route: RouteDefinition, mode: DriveMode): Scene {
       return { onCrossing: position.onCrossing };
     });
 
-    const candidate = stepVehicle(vehicleState, getInput(), dtSeconds);
+    const candidate = stepVehicle(vehicleState, input, dtSeconds);
 
     // Colisión: a diferencia de los límites de calzada, un coche real no
     // puede atravesar una pared, otro coche o un peatón, así que aquí sí
@@ -535,6 +556,7 @@ function createScene(route: RouteDefinition, mode: DriveMode): Scene {
         routePoints,
         { x: vehicleState.x, z: vehicleState.z },
         giveWayObstructed,
+        giveWayLineOrigins,
       );
       maneuverProgress = giveWayResult.progress;
       giveWayEvalState = giveWayResult.evalState;

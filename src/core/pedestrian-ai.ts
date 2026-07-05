@@ -7,10 +7,15 @@ const PEDESTRIAN_SPEED_MS = 1.2;
  * Espera en cada acera antes de cruzar de vuelta. Placeholder determinista
  * (no aleatorio), misma clase de simplificación que el ciclo de semáforos en
  * traffic-light.ts: no hay datos reales de qué tan seguido cruza la gente en
- * cada paso de peatones de ruta-01 (que además no tiene ninguno todavía, ver
- * CLAUDE.md), así que un valor fijo es lo honesto hasta que haga falta variarlo.
+ * cada paso de peatones, así que un valor fijo es lo honesto hasta que haga
+ * falta variarlo. Subido de 4s a 25s (2026-07-05): con las calzadas reales de
+ * ruta-01 (15-18m de ancho, 16-18s de cruce a PEDESTRIAN_SPEED_MS) una espera
+ * de 4s dejaba a cada peatón sobre la calzada ~2/3 del tiempo — el tráfico de
+ * IA pasaba más tiempo parado cediendo el paso que circulando, y la ventana
+ * para aprobar el give-way era mínima. Con 25s la calzada queda ocupada ~40%
+ * del tiempo, sigue habiendo cruces frecuentes y las ventanas son razonables.
  */
-const DWELL_TIME_S = 4;
+const DWELL_TIME_S = 25;
 
 /** Cuánto se adentra el peatón en la acera a cada lado del paso, más allá del ancho de calzada. */
 export const PEDESTRIAN_CROSSING_MARGIN_M = 2;

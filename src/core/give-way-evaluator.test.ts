@@ -60,6 +60,41 @@ describe('updateGiveWayOutcomes', () => {
     expect(result.progress[0].outcome).toBe('not-evaluated');
   });
 
+  it('evaluates at the lineOrigins override (the real zebra position), not at the waypoint', () => {
+    const lineOrigins = [{ x: 0, z: 20 }];
+    const evaluate = (zPositions: number[], obstructed: boolean) => {
+      let result = { progress: createManeuverProgress([giveWayManeuver()]), evalState: createGiveWayEvalState(1) };
+      for (const z of zPositions) {
+        result = updateGiveWayOutcomes(
+          result.progress,
+          result.evalState,
+          waypoints,
+          waypointPositions,
+          { x: 0, z },
+          [obstructed],
+          lineOrigins,
+        );
+      }
+      return result;
+    };
+
+    // Cruzar el waypoint (z=0) no evalúa nada: la línea real está en z=20.
+    expect(evaluate([-1, 1], true).progress[0].outcome).toBe('not-evaluated');
+    // Cruzar la cebra (z=20) sí evalúa, con el criterio de siempre.
+    expect(evaluate([-1, 19, 21], true).progress[0].outcome).toBe('fail');
+    expect(evaluate([-1, 19, 21], false).progress[0].outcome).toBe('pass');
+  });
+
+  it('falls back to the waypoint line when its lineOrigins entry is null', () => {
+    let result = { progress: createManeuverProgress([giveWayManeuver()]), evalState: createGiveWayEvalState(1) };
+    for (const z of [-1, 1]) {
+      result = updateGiveWayOutcomes(result.progress, result.evalState, waypoints, waypointPositions, { x: 0, z }, [true], [
+        null,
+      ]);
+    }
+    expect(result.progress[0].outcome).toBe('fail');
+  });
+
   it('leaves non-give-way maneuvers untouched regardless of vehicle position', () => {
     const trafficLightManeuver: Maneuver = {
       type: 'traffic-light',

@@ -36,6 +36,18 @@ export function createGiveWayEvalState(maneuverCount: number): GiveWayCrossingSt
  * así cruzó obstruido de si nunca frenó — ambos violan la cesión de paso
  * real, igual que en un examen real. Cada maniobra se evalúa como mucho una
  * vez.
+ *
+ * `lineOrigins` (opcional, paralelo a `progress`) desplaza el origen de la
+ * línea de cruce de la maniobra `index` a ese punto en vez del waypoint — en
+ * la práctica, la posición real del paso de cebra emparejado (ver main.ts):
+ * en ruta-01 los pasos reales quedan a 10-27m de su waypoint, y evaluar en el
+ * waypoint permitía suspender 27m después de haber cedido el paso
+ * correctamente en la cebra (o aprobar habiendo cruzado por delante del
+ * peatón). El eje sigue siendo el headingDeg del waypoint: por convención de
+ * los route.ts, el headingDeg de cada señal de paso ya es el rumbo de la ruta
+ * en su waypoint más cercano, así que no hay un segundo rumbo que consultar.
+ * Entradas null/ausentes caen al waypoint de siempre (p. ej. maniobras
+ * emparejadas con tráfico transversal, cuyo cruce es el propio waypoint).
  */
 export function updateGiveWayOutcomes(
   progress: ManeuverProgress[],
@@ -44,6 +56,7 @@ export function updateGiveWayOutcomes(
   waypointPositions: LocalPoint[],
   vehiclePosition: LocalPoint,
   obstructed: boolean[],
+  lineOrigins?: (LocalPoint | null)[],
 ): { progress: ManeuverProgress[]; evalState: GiveWayCrossingState[] } {
   const nextEvalState = [...evalState];
 
@@ -58,7 +71,8 @@ export function updateGiveWayOutcomes(
       return entry;
     }
 
-    const projection = projectOntoHeadingAxis(vehiclePosition, waypointLocal, waypoint.headingDeg);
+    const lineOrigin = lineOrigins?.[index] ?? waypointLocal;
+    const projection = projectOntoHeadingAxis(vehiclePosition, lineOrigin, waypoint.headingDeg);
     const previousProjection = nextEvalState[index].lastAxisProjectionM;
     nextEvalState[index] = { lastAxisProjectionM: projection };
 
