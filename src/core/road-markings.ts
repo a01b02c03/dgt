@@ -182,15 +182,21 @@ export interface ZebraCrossing {
  * sentido de la marcha, repartidas a lo ancho de la calzada del tramo al que
  * pertenece el paso (queryRoadBounds, el mismo emparejamiento
  * posición→tramo que usan los peatones en main.ts para su ancho de cruce).
+ * El ancla lateral es la **proyección de la posición sobre la polilínea**
+ * (`closestPoint`), no la posición cruda del dataset: la coordenada oficial
+ * de un paso puede caer desplazada del eje (el paso #0 de ruta-02 está a
+ * -5.6m en una calzada de 9m — con el ancla cruda, la cebra quedaba pintada
+ * sobre la acera izquierda en vez de cubrir la calle). main.ts hace el mismo
+ * encaje para el paseo del peatón, así pintura y comportamiento coinciden.
  */
 export function buildZebraQuads(crossings: ZebraCrossing[], waypoints: Waypoint[], routePoints: LocalPoint[]): MarkingQuad[] {
   const widthAt = (segmentIndex: number) => roadWidthMAtSegment(waypoints, segmentIndex);
   const quads: MarkingQuad[] = [];
 
   crossings.forEach((crossing) => {
-    const segmentIndex = queryRoadBounds(routePoints, widthAt, crossing.position).segmentIndex;
-    const halfWidthM = widthAt(segmentIndex) / 2;
-    const frame = headingFrame(crossing.position, crossing.headingDeg);
+    const bounds = queryRoadBounds(routePoints, widthAt, crossing.position);
+    const halfWidthM = widthAt(bounds.segmentIndex) / 2;
+    const frame = headingFrame(bounds.closestPoint, crossing.headingDeg);
 
     const stepM = ZEBRA_STRIPE_WIDTH_M + ZEBRA_STRIPE_GAP_M;
     for (let center = -halfWidthM + ZEBRA_STRIPE_WIDTH_M / 2; center + ZEBRA_STRIPE_WIDTH_M / 2 <= halfWidthM; center += stepM) {

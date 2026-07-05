@@ -192,7 +192,13 @@ de la ruta, cruzando en línea recta perpendicular a la calzada en ese punto (`p
 esperando `DWELL_TIME_S` (placeholder determinista, misma clase de simplificación que el ciclo de
 `traffic-light.ts`; subido de 4s a 25s el 2026-07-05 — con 4s cada peatón estaba sobre la calzada
 ~2/3 del tiempo en las calzadas reales de 15-18m de `ruta-01` y el tráfico de IA casi nunca
-circulaba, ver el comentario de la constante) en cada acera antes de volver a cruzar. `ruta-01` tiene 3 pasos reales (cerca de
+circulaba, ver el comentario de la constante) en cada acera antes de volver a cruzar. El ancla de
+cada paso es la **proyección de la coordenada oficial sobre la polilínea**
+(`RoadBoundsQuery.closestPoint`, 2026-07-05), no la coordenada cruda del dataset: esta puede caer
+desplazada del eje (el paso #0 de `ruta-02` está a -5.6m, fuera del propio asfalto de 9m — el
+peatón cruzaba, y la cebra se pintaba, sobre la acera izquierda en vez de sobre la calle); la
+cebra pintada hace el mismo encaje dentro de `buildZebraQuads`, así pintura y comportamiento
+coinciden por construcción. `ruta-01` tiene 3 pasos reales (cerca de
 wp1, wp5/Avinguda Diagonal y wp6), del inventario oficial "infraestructures-inventari-pas-vianants"
 del Ajuntament — ver el comentario de cabecera de `route.ts` para el método de verificación
 (distancia punto-segmento a la geometría real de OSM, para confirmar que cada uno pertenece a

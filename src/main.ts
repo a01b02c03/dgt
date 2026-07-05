@@ -305,13 +305,19 @@ function createScene(route: RouteDefinition, mode: DriveMode): Scene {
   // advancePedestrian antes del primer frame. El ancho de calzada que cruza
   // cada uno es el de su propio tramo (roadWidthMAt), no un ROAD_WIDTH_M fijo
   // — necesario porque wp5/wp6 de ruta-01 caen en el tramo de sentido único,
-  // más estrecho que el tramo de doble sentido donde está wp1.
+  // más estrecho que el tramo de doble sentido donde está wp1. El ancla es la
+  // proyección de la posición oficial sobre la polilínea (closestPoint), no
+  // la posición cruda: la coordenada del dataset puede caer desplazada del
+  // eje (el paso #0 de ruta-02 está a -5.6m, fuera del asfalto) y el paseo
+  // del peatón debe cubrir la calzada real — mismo encaje que la cebra
+  // pintada (ver buildZebraQuads en core/road-markings.ts).
   const pedestrians = route.signs
     .filter((sign) => sign.type === 'pedestrian-crossing')
     .map((sign, index) => {
-      const crossing = { position: toLocalMeters(origin, sign.position), headingDeg: sign.headingDeg };
-      const crossingSegmentIndex = queryRoadBounds(routePoints, roadWidthMAt, crossing.position).segmentIndex;
-      const roadHalfWidthM = roadWidthMAt(crossingSegmentIndex) / 2;
+      const rawPositionLocal = toLocalMeters(origin, sign.position);
+      const crossingBounds = queryRoadBounds(routePoints, roadWidthMAt, rawPositionLocal);
+      const crossing = { position: crossingBounds.closestPoint, headingDeg: sign.headingDeg };
+      const roadHalfWidthM = roadWidthMAt(crossingBounds.segmentIndex) / 2;
       const crossingHalfWidthM = roadHalfWidthM + PEDESTRIAN_CROSSING_MARGIN_M;
       const { mesh } = buildPedestrianMesh(scene);
       const initialState = createPedestrianState(-crossingHalfWidthM);

@@ -9,6 +9,15 @@ export interface RoadBoundsQuery {
   onRoad: boolean;
   /** Índice i tal que el segmento más cercano es centerline[i]-centerline[i+1]. */
   segmentIndex: number;
+  /**
+   * Proyección de la posición consultada sobre el eje: el punto de la
+   * polilínea más cercano. Usado para "encajar" al eje de la calzada un
+   * punto de un dataset real que cae desplazado lateralmente (p. ej. la
+   * posición oficial de un paso de peatones, medida en la esquina de la
+   * acera y no en el centro de la vía — el paso #0 de ruta-02 está a -5.6m
+   * del eje, fuera del propio asfalto de 9m).
+   */
+  closestPoint: LocalPoint;
 }
 
 /**
@@ -30,6 +39,7 @@ export function queryRoadBounds(
   let bestDistance = Infinity;
   let bestLateral = 0;
   let bestSegmentIndex = 0;
+  let bestClosest: LocalPoint = centerline[0];
 
   for (let i = 0; i < centerline.length - 1; i++) {
     const p1 = centerline[i];
@@ -52,6 +62,7 @@ export function queryRoadBounds(
     if (distance < bestDistance) {
       bestDistance = distance;
       bestSegmentIndex = i;
+      bestClosest = { x: closestX, z: closestZ };
       // cruz 2D (dx,dz) x (toPointX,toPointZ): >0 = izquierda del sentido de circulación, <0 = derecha.
       const cross = dx * toPointZ - dz * toPointX;
       const length = Math.sqrt(segmentLengthSq) || 1;
@@ -65,6 +76,7 @@ export function queryRoadBounds(
     lateralOffsetM: bestLateral,
     onRoad: bestDistance <= halfWidth,
     segmentIndex: bestSegmentIndex,
+    closestPoint: bestClosest,
   };
 }
 

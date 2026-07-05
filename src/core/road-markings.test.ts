@@ -84,6 +84,19 @@ describe('buildZebraQuads', () => {
       expect((Math.min(...zs) + Math.max(...zs)) / 2).toBeCloseTo(50, 6);
     });
   });
+
+  it('anchors laterally to the polyline projection, not to an off-axis dataset position', () => {
+    // Ancla cruda a -5.6m del eje (fuera de una calzada de 9m, el caso real
+    // del paso #0 de ruta-02): la cebra debe cubrir [-4.5, +4.5] igualmente.
+    const waypoints = [waypoint(true, 2), waypoint(true, 2)];
+    const quads = buildZebraQuads([{ position: { x: -5.6, z: 50 }, headingDeg: 0 }], waypoints, routePoints);
+    expect(Math.min(...quads.flatMap(xValues))).toBeCloseTo(-4.5, 6);
+    expect(Math.max(...quads.flatMap(xValues))).toBeLessThanOrEqual(4.5 + 1e-6);
+    quads.forEach((quad) => {
+      const zs = quad.corners.map((c) => c.z);
+      expect((Math.min(...zs) + Math.max(...zs)) / 2).toBeCloseTo(50, 6);
+    });
+  });
 });
 
 describe('buildStopLineQuads', () => {

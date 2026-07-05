@@ -29,6 +29,18 @@ describe('queryRoadBounds', () => {
     expect(result.distanceFromCenterM).toBeCloseTo(50, 6);
   });
 
+  it('returns the projection onto the centerline as closestPoint', () => {
+    const result = queryRoadBounds(straight, () => 6, { x: -5.6, z: 50 });
+    expect(result.closestPoint.x).toBeCloseTo(0, 6);
+    expect(result.closestPoint.z).toBeCloseTo(50, 6);
+  });
+
+  it('clamps closestPoint to the segment endpoint beyond the route end', () => {
+    const result = queryRoadBounds(straight, () => 6, { x: 2, z: 150 });
+    expect(result.closestPoint.x).toBeCloseTo(0, 6);
+    expect(result.closestPoint.z).toBeCloseTo(100, 6);
+  });
+
   it('assigns opposite lateral sign on either side of the road', () => {
     const east = queryRoadBounds(straight, () => 6, { x: 2, z: 50 });
     const west = queryRoadBounds(straight, () => 6, { x: -2, z: 50 });
