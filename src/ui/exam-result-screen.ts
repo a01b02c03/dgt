@@ -48,6 +48,12 @@ export function buildExamResultScreen(onRestart: () => void): ExamResultScreen {
       });
 
       containerEl.hidden = false;
+      // La lista scrollea (max-height en index.html) y un "No apto" puede
+      // deberse a una maniobra que quede bajo el pliegue (p. ej. la última de
+      // 9 en ruta-01): sin esto, el veredicto se ve pero su causa no. El
+      // scroll debe hacerse con el contenedor ya visible (hidden = false
+      // arriba), si no no hay layout sobre el que desplazarse.
+      listEl.querySelector('.hud-maneuver--fail')?.scrollIntoView({ block: 'center' });
     },
   };
 }
