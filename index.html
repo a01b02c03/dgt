@@ -91,7 +91,9 @@
       #exam-result-badge { font-size: 48px; font-weight: 800; padding: 10px 28px; border-radius: 12px; }
       #exam-result-badge.exam-result-badge--pass { background: #2fae5c; color: #04220f; }
       #exam-result-badge.exam-result-badge--fail { background: #d1452f; color: #240600; }
-      #exam-result-maneuvers { list-style: none; margin: 0; padding: 0; width: 100%; max-width: 320px; }
+      /* max-height + scroll: con 9+ maniobras (ruta-01, ruta-03) la lista desbordaba el
+         centrado flex de #exam-result y empujaba el botón de reinicio fuera de la pantalla */
+      #exam-result-maneuvers { list-style: none; margin: 0; padding: 0; width: 100%; max-width: 320px; max-height: 55vh; overflow-y: auto; }
       #exam-result-restart {
         padding: 10px 24px;
         border-radius: 8px;

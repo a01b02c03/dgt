@@ -40,10 +40,12 @@ export function buildRouteSelectScreen(): RouteSelectScreen {
           onSelect(route, mode);
         };
 
+        const label = routeLabel(route);
+
         if (offerFreeDrive) {
           const name = document.createElement('span');
           name.className = 'route-select-name';
-          name.textContent = route.name;
+          name.textContent = label;
 
           const examButton = document.createElement('button');
           examButton.textContent = 'Examen';
@@ -57,7 +59,7 @@ export function buildRouteSelectScreen(): RouteSelectScreen {
           li.append(name, examButton, freeButton);
         } else {
           const button = document.createElement('button');
-          button.textContent = route.name;
+          button.textContent = label;
           button.addEventListener('click', () => pick('exam'));
           li.appendChild(button);
         }
@@ -68,6 +70,16 @@ export function buildRouteSelectScreen(): RouteSelectScreen {
       containerEl.hidden = false;
     },
   };
+}
+
+/**
+ * Etiqueta visible de una ruta: el número del id del código ('ruta-03' → 'Ruta 03')
+ * delante del nombre, para que el usuario pueda referirse a la misma ruta que
+ * los ids de `src/routes/`.
+ */
+function routeLabel(route: RouteDefinition): string {
+  const num = route.id.replace(/^ruta-/, '');
+  return `Ruta ${num} — ${route.name}`;
 }
 
 function requireElement(id: string): HTMLElement {
