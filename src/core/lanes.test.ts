@@ -4,11 +4,11 @@ import {
   buildOncomingRoute,
   clampLaneIndex,
   isTwoWaySegment,
-  LANE_OFFSET_M,
   laneIndexFromLateralOffsetM,
   laneOffsetM,
   mirroredArcLengthOfWaypoint,
   offsetPoseToLane,
+  oncomingLaneOffsetM,
   ownDirectionLaneCount,
   roadWidthMAtSegment,
 } from './lanes';
@@ -85,15 +85,15 @@ describe('mirroredArcLengthOfWaypoint', () => {
 
 describe('offsetPoseToLane', () => {
   it('shifts to the right of a north-facing pose (positive = right, same convention as road-bounds.ts)', () => {
-    const pose = offsetPoseToLane({ x: 0, z: 0, headingRad: 0 }, LANE_OFFSET_M);
-    expect(pose.x).toBeCloseTo(LANE_OFFSET_M, 6); // este = derecha de norte
+    const pose = offsetPoseToLane({ x: 0, z: 0, headingRad: 0 }, 1.5);
+    expect(pose.x).toBeCloseTo(1.5, 6); // este = derecha de norte
     expect(pose.z).toBeCloseTo(0, 6);
     expect(pose.headingRad).toBe(0);
   });
 
   it('shifts to the other side for a reversed (south-facing) pose without special-casing direction', () => {
-    const pose = offsetPoseToLane({ x: 0, z: 0, headingRad: Math.PI }, LANE_OFFSET_M);
-    expect(pose.x).toBeCloseTo(-LANE_OFFSET_M, 6); // oeste = derecha de sur
+    const pose = offsetPoseToLane({ x: 0, z: 0, headingRad: Math.PI }, 1.5);
+    expect(pose.x).toBeCloseTo(-1.5, 6); // oeste = derecha de sur
     expect(pose.z).toBeCloseTo(0, 6);
   });
 });
@@ -148,33 +148,65 @@ describe('clampLaneIndex', () => {
   });
 });
 
-describe('laneOffsetM', () => {
-  it('matches LANE_OFFSET_M for the single-lane case', () => {
-    expect(laneOffsetM(0, 1)).toBeCloseTo(LANE_OFFSET_M, 6);
+describe('laneOffsetM (layout centrado en la polilínea, ver el comentario de cabecera de lanes.ts)', () => {
+  it('keeps the legacy +-1.5 split for the 1+1 two-way case', () => {
+    expect(laneOffsetM(0, 1, true)).toBeCloseTo(1.5, 6);
   });
 
-  it('places lane 0 closest to the centerline and higher indices further out', () => {
-    expect(laneOffsetM(0, 2)).toBeCloseTo(1.5, 6);
-    expect(laneOffsetM(1, 2)).toBeCloseTo(4.5, 6);
+  it('centers a single one-way lane on the polyline (no oncoming strip to skip)', () => {
+    expect(laneOffsetM(0, 1, false)).toBeCloseTo(0, 6);
+  });
+
+  it('fills the ribbon width symmetrically on a multi-lane two-way road', () => {
+    // 2+1 carriles = 9m de cinta: contrario [-4.5,-1.5], propios [-1.5,+1.5] y [+1.5,+4.5].
+    expect(laneOffsetM(0, 2, true)).toBeCloseTo(0, 6);
+    expect(laneOffsetM(1, 2, true)).toBeCloseTo(3, 6);
+  });
+
+  it('fills the ribbon width symmetrically on a multi-lane one-way road', () => {
+    // 2 carriles = 6m de cinta: [-3,0] y [0,+3].
+    expect(laneOffsetM(0, 2, false)).toBeCloseTo(-1.5, 6);
+    expect(laneOffsetM(1, 2, false)).toBeCloseTo(1.5, 6);
+  });
+
+  it('never places a lane center outside the ribbon (regression: pre-centered model overflowed by (N-1)*1.5m)', () => {
+    const laneCount = 5;
+    const halfWidth = roadWidthMAtSegment([waypoint(true, laneCount)], 0) / 2;
+    for (let lane = 0; lane < laneCount; lane++) {
+      expect(Math.abs(laneOffsetM(lane, laneCount, true))).toBeLessThan(halfWidth);
+    }
   });
 
   it('clamps to the last lane if the road narrows under the vehicle', () => {
-    expect(laneOffsetM(1, 1)).toBeCloseTo(laneOffsetM(0, 1), 6);
+    expect(laneOffsetM(1, 1, true)).toBeCloseTo(laneOffsetM(0, 1, true), 6);
+  });
+});
+
+describe('oncomingLaneOffsetM', () => {
+  it('keeps the legacy 1.5 for a single own lane', () => {
+    expect(oncomingLaneOffsetM(1)).toBeCloseTo(1.5, 6);
+  });
+
+  it('tracks the far edge of the ribbon as own lanes grow', () => {
+    // 5+1 carriles = 18m: franja contraria [-9,-6] en el frame propio, centro -7.5
+    // = +7.5 a la derecha desde el rumbo invertido del vehículo contrario.
+    expect(oncomingLaneOffsetM(5)).toBeCloseTo(7.5, 6);
   });
 });
 
 describe('laneIndexFromLateralOffsetM', () => {
   it('always resolves to lane 0 on a single-lane road', () => {
-    expect(laneIndexFromLateralOffsetM(0.5, 1)).toBe(0);
-    expect(laneIndexFromLateralOffsetM(2.9, 1)).toBe(0);
+    expect(laneIndexFromLateralOffsetM(0.5, 1, true)).toBe(0);
+    expect(laneIndexFromLateralOffsetM(-1, 1, false)).toBe(0);
   });
 
   it('picks the lane whose band contains the offset on a multi-lane road', () => {
-    expect(laneIndexFromLateralOffsetM(1, 2)).toBe(0);
-    expect(laneIndexFromLateralOffsetM(4, 2)).toBe(1);
+    // 2+1: propios en [-1.5,+1.5] y [+1.5,+4.5].
+    expect(laneIndexFromLateralOffsetM(0, 2, true)).toBe(0);
+    expect(laneIndexFromLateralOffsetM(3, 2, true)).toBe(1);
   });
 
-  it('clamps offsets on the wrong side of the centerline to the innermost lane', () => {
-    expect(laneIndexFromLateralOffsetM(-2, 2)).toBe(0);
+  it('clamps offsets inside the oncoming strip to the innermost own lane', () => {
+    expect(laneIndexFromLateralOffsetM(-3, 2, true)).toBe(0);
   });
 });

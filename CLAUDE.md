@@ -119,14 +119,21 @@ envolvimiento, `poseAtArcLength` los clampaba en el último waypoint y quedaban 
 siempre — visible en `ruta-02`, cuyo último waypoint es un semáforo (los coches se quedaban
 plantados en él aunque estuviera en verde) y además es la meta, que bloqueaban físicamente.
 
-**Carriles / sentido contrario** (`core/lanes.ts`): el sentido contrario siempre se modela con un
-único carril fijo, centrado en `±LANE_OFFSET_M` (1.5m, la mitad de `LANE_WIDTH_M`) respecto al eje de
-la calzada, sea cual sea el número de carriles reales del propio sentido en ese tramo (`laneOffsetM`
-generaliza ese mismo desplazamiento a varios carriles propios, ver "Varios carriles en el mismo
-sentido" más abajo) — `offsetPoseToLane` desplaza cualquier pose lateralmente respecto a su propio
-rumbo (así que para un vehículo en
-sentido contrario, cuyo rumbo ya sale invertido de fábrica, "a la derecha" ya es su derecha real
-sin ningún caso especial). El tráfico en sentido contrario reutiliza toda la lógica de
+**Carriles / sentido contrario** (`core/lanes.ts`): el layout transversal está **centrado en la
+polilínea de waypoints** (2026-07-05, ver el comentario de cabecera de `lanes.ts`): la franja
+izquierda es el único carril del sentido contrario (si `twoWay`) y el resto son los carriles
+propios — la polilínea viene del eje de calle de OSM, que es el centro físico real de la calzada,
+así que este layout coincide con la cinta visual (`road-mesh.ts`), con `road-bounds.ts` y con las
+fachadas reales. Antes los carriles propios arrancaban en el eje (+1.5, +4.5…) y el contrario iba
+fijo en −1.5 (`LANE_OFFSET_M`, eliminado): coincidía con la cinta centrada solo en el caso 1+1 —
+con los 3-5 carriles reales de `ruta-01`, el bloque modelado sobresalía hasta 6m de la cinta por
+la derecha, invisible hasta que hubo que pintar la señalización horizontal (ver abajo).
+`oncomingLaneOffsetM(ownLaneCount)` da el offset del carril contrario desde el rumbo ya invertido
+del vehículo (crece con los carriles propios para seguir pegado al borde real; puede saltar 3m al
+cruzar un waypoint donde cambia el número de carriles, misma clase de simplificación que el
+clampeo de carril de la IA). `offsetPoseToLane` desplaza cualquier pose lateralmente respecto a su
+propio rumbo (así que para un vehículo en sentido contrario, cuyo rumbo ya sale invertido de
+fábrica, "a la derecha" ya es su derecha real sin ningún caso especial). El tráfico en sentido contrario reutiliza toda la lógica de
 `traffic-ai.ts` (frenada ante rojo, distancia de seguridad) sobre un sub-trazado invertido
 (`buildOncomingRoute`) restringido al **tramo de doble sentido que arranca al principio de la
 ruta** — `Waypoint.twoWay` marca qué segmentos lo son, con la misma convención "aplica desde este
@@ -140,7 +147,8 @@ adelante — coincide con el R-101 (no-entry) ya colocado ahí.
 **Varios carriles en el mismo sentido** (`core/lanes.ts`): `Waypoint.ownDirectionLanes` (misma
 convención "aplica desde este waypoint en adelante" que `twoWay`/`speedLimitKmh`) generaliza el
 carril único de siempre a un bloque de `N` carriles de `LANE_WIDTH_M` (3m) cada uno, `laneOffsetM`
-calcula el desplazamiento lateral del carril `i` (0 = el más cercano al eje) y `ownDirectionLaneCount`
+calcula el desplazamiento lateral del carril `i` (0 = el más a la izquierda del bloque propio, en
+el layout centrado descrito arriba — por eso ahora recibe también `twoWay`) y `ownDirectionLaneCount`
 lee cuántos carriles hay en un segmento dado. Cada vehículo de IA (no el sentido contrario, que sigue
 siendo siempre de un carril) recibe un carril fijo al aparecer (reparto por turnos entre los
 carriles disponibles en su punto de arranque) y lo mantiene toda la ruta — no hay modelo de cambio
@@ -379,6 +387,24 @@ revisión (cambio de diseño mayor, no abordado): los peatones ignoran la fase d
 cruce — en wp5/wp6 cruzan también con el semáforo del coche en verde, obligando al jugador a
 pararse en verde para no suspender el give-way; en un cruce semaforizado real cruzarían en su
 propia fase (la contraria).
+
+**Señalización horizontal** (2026-07-05, `core/road-markings.ts` + `scene/road-marking-mesh.ts`):
+la calzada era una cinta gris sin marcas — con una maniobra `lane-change` que exigía cambiar de
+carril sin que hubiera carriles visibles. Tres familias de marcas, cada una alineada con el modelo
+que ya gobierna el comportamiento (no son decorado independiente): líneas de carril (separador
+continuo de sentidos + discontinuas entre carriles propios, las mismas fronteras que usa
+`laneIndexFromLateralOffsetM`), cebras en la posición real de cada paso (donde cruza el peatón y
+evalúa el give-way) y líneas de detención en los semáforos (el mismo eje que evalúa
+`traffic-light-evaluator.ts`). Todo en una única malla por ruta (un draw call; ruta-03 genera
+~1.7k quads). Las líneas longitudinales se anclan a los mismos frames por vértice que la cinta de
+`road-mesh.ts` (normal promediada + semiancho por punto, offset como fracción del semiancho), así
+que giran/estrechan con el asfalto y nunca se salen de él — verificado sobre la geometría real de
+las 3 rutas (patrón zzz-verify): exceden el criterio de `road-bounds` estrictamente menos que los
+propios bordes de la cinta (esa divergencia cinta↔bounds en esquinas cerradas es preexistente y
+solo cosmética/gameplay, no la introducen las marcas). Medidas placeholder aproximadas a la norma
+española (trazo 0.15m, discontinua 2m/4m, cebra 0.5m/0.5m×4m, detención 0.4m), no calibradas
+contra ningún plano real. Pintar las marcas obligó a arreglar antes el anclaje del modelo de
+carriles (ver "Carriles / sentido contrario" arriba).
 
 **No implementado todavía**:
 - Físicas de vehículo "de verdad" (motor de físicas de Babylon) — el controlador actual es

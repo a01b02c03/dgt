@@ -2,19 +2,31 @@ import type { LocalPoint } from './geo';
 import type { RoutePose } from './traffic-ai';
 import type { Waypoint } from './route-types';
 
-/**
- * Offset lateral del centro de cada carril respecto al eje de la calzada,
- * la mitad del ancho total (ver ROAD_WIDTH_M en road-bounds.ts): con 6m de
- * calzada, cada sentido ocupa su mitad (3m), centrado en ±1.5m. Caso
- * particular de `laneOffsetM(0, 1)` de abajo — se mantiene como constante
- * aparte porque el sentido contrario siempre se modela con un único carril
- * (ver `oncomingVehicles` en main.ts), así que no necesita pasar por el
- * modelo genérico de varios carriles.
- */
-export const LANE_OFFSET_M = 1.5;
-
 /** Ancho de un carril, en metros — igual al ancho por sentido de ROAD_WIDTH_M/2 cuando hay un único carril. */
 export const LANE_WIDTH_M = 3;
+
+/**
+ * Layout transversal de la calzada (2026-07-05): **centrado en la polilínea
+ * de waypoints**, igual que la cinta visual (road-mesh.ts) y la detección de
+ * salida de calzada (road-bounds.ts) — la polilínea viene del eje de la calle
+ * de OSM, que es el centro físico real de la calzada (los edificios extruidos
+ * están a su distancia real de ese eje). De izquierda a derecha del sentido
+ * de circulación:
+ *
+ *   [-W/2 ......................................... +W/2]
+ *   [ contrario 3m (si twoWay) | carril 0 | ... | carril N-1 ]
+ *
+ * Antes de esta fecha, los carriles propios arrancaban en el eje (+1.5,
+ * +4.5, ...) y el contrario iba fijo en -1.5: coincidía con la cinta centrada
+ * solo en el caso 1+1 (calzada de 6m). Con los carriles reales de ruta-01
+ * (3-5 propios), el bloque modelado sobresalía hasta 6m de la cinta visual
+ * por la derecha e ignoraba otro tanto por la izquierda — invisible sin
+ * señalización horizontal pintada, imposible de ocultar con ella.
+ */
+function ownLanesStartOffsetM(laneCount: number, twoWay: boolean): number {
+  const oncomingLanes = twoWay ? 1 : 0;
+  return (-(laneCount + oncomingLanes) * LANE_WIDTH_M) / 2 + oncomingLanes * LANE_WIDTH_M;
+}
 
 /**
  * Si el tramo que empieza en `waypoints[segmentIndex]` es de doble sentido.
@@ -63,27 +75,42 @@ export function clampLaneIndex(laneIndex: number, laneCount: number): number {
 }
 
 /**
- * Offset lateral del centro del carril `laneIndex` (0 = el más cercano al eje
- * de la calzada, creciente hacia la acera) dentro de un bloque de `laneCount`
- * carriles del propio sentido, cada uno de LANE_WIDTH_M. Recorta laneIndex al
+ * Offset lateral (positivo = derecha del sentido de circulación) del centro
+ * del carril `laneIndex` (0 = el más a la izquierda del bloque propio,
+ * creciente hacia la acera) dentro del layout centrado descrito arriba —
+ * necesita saber si el tramo es de doble sentido porque el carril contrario
+ * ocupa la franja izquierda del mismo ancho total. Recorta laneIndex al
  * rango disponible en vez de lanzar, para que un vehículo con un carril
  * asignado en un tramo más ancho no quede fuera de calzada si el tramo
  * siguiente tiene menos carriles (no hay modelo de fusión de carriles, ver
  * traffic-ai.ts).
  */
-export function laneOffsetM(laneIndex: number, laneCount: number): number {
-  return LANE_WIDTH_M * (clampLaneIndex(laneIndex, laneCount) + 0.5);
+export function laneOffsetM(laneIndex: number, laneCount: number, twoWay: boolean): number {
+  return ownLanesStartOffsetM(laneCount, twoWay) + LANE_WIDTH_M * (clampLaneIndex(laneIndex, laneCount) + 0.5);
+}
+
+/**
+ * Offset lateral del centro del carril contrario **desde el punto de vista
+ * del propio vehículo en sentido contrario** (positivo = su derecha): la
+ * franja izquierda del layout original es, vista desde el rumbo invertido,
+ * la franja derecha — a W/2 - LANE_WIDTH_M/2 de la polilínea. Con 1+1
+ * carriles da el 1.5 de siempre; con más carriles propios crece para seguir
+ * pegado al borde real de la cinta.
+ */
+export function oncomingLaneOffsetM(ownLaneCount: number): number {
+  return (ownLaneCount * LANE_WIDTH_M) / 2;
 }
 
 /**
  * Carril más cercano a un desplazamiento lateral dado (mismo convenio que
  * RoadBoundsQuery.lateralOffsetM: positivo = a la derecha del sentido de
- * circulación, o sea, el lado del propio sentido). Usado para saber en qué
- * carril está el jugador (que se mueve libre en 2D, no por carril fijo como
- * la IA) a efectos de si bloquea a un vehículo de IA que le sigue por detrás.
+ * circulación). Usado para saber en qué carril está el jugador (que se mueve
+ * libre en 2D, no por carril fijo como la IA) a efectos de si bloquea a un
+ * vehículo de IA que le sigue por detrás y del criterio de lane-change.
  */
-export function laneIndexFromLateralOffsetM(lateralOffsetM: number, laneCount: number): number {
-  return clampLaneIndex(Math.floor(lateralOffsetM / LANE_WIDTH_M), laneCount);
+export function laneIndexFromLateralOffsetM(lateralOffsetM: number, laneCount: number, twoWay: boolean): number {
+  const withinOwnBlockM = lateralOffsetM - ownLanesStartOffsetM(laneCount, twoWay);
+  return clampLaneIndex(Math.floor(withinOwnBlockM / LANE_WIDTH_M), laneCount);
 }
 
 export interface OncomingRoute {

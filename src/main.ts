@@ -5,11 +5,12 @@ import { toLocalMeters } from './core/geo';
 import { currentSpeedLimitKmh, maneuverChecklistLabel, speedMsToKmh } from './core/hud';
 import {
   buildOncomingRoute,
-  LANE_OFFSET_M,
+  isTwoWaySegment,
   laneIndexFromLateralOffsetM,
   laneOffsetM,
   mirroredArcLengthOfWaypoint,
   offsetPoseToLane,
+  oncomingLaneOffsetM,
   ownDirectionLaneCount,
   roadWidthMAtSegment,
 } from './core/lanes';
@@ -38,6 +39,7 @@ import {
   stepPedestrian,
 } from './core/pedestrian-ai';
 import { queryRoadBounds } from './core/road-bounds';
+import { buildLaneLineQuads, buildStopLineQuads, buildZebraQuads } from './core/road-markings';
 import { getTrafficLightPhase } from './core/traffic-light';
 import { createStopLineCrossingState, updateTrafficLightOutcomes } from './core/traffic-light-evaluator';
 import {
@@ -60,6 +62,7 @@ import {
   MANEUVER_PENDING_COLOR,
 } from './scene/maneuver-markers';
 import { buildPedestrianMesh } from './scene/pedestrian-mesh';
+import { buildRoadMarkingMesh } from './scene/road-marking-mesh';
 import { buildRoadMesh } from './scene/road-mesh';
 import { buildSignMarkers } from './scene/sign-markers';
 import { buildTrafficLightMarkers, TRAFFIC_LIGHT_PHASE_COLORS } from './scene/traffic-light-markers';
@@ -172,6 +175,26 @@ function createScene(route: RouteDefinition, mode: DriveMode): Scene {
   // Ancho de calzada por tramo (ver roadWidthMAtSegment en core/lanes.ts), no
   // un ROAD_WIDTH_M fijo: coherente con el ancho visual de road-mesh.ts.
   const roadWidthMAt = (segmentIndex: number) => roadWidthMAtSegment(route.waypoints, segmentIndex);
+
+  // Señalización horizontal (ver core/road-markings.ts): líneas de carril del
+  // layout centrado de core/lanes.ts, cebras en los pasos reales y líneas de
+  // detención en los semáforos — cada familia alineada con la línea/frontera
+  // que ya usa su evaluador o IA correspondiente.
+  buildRoadMarkingMesh(
+    [
+      ...buildLaneLineQuads(route.waypoints, routePoints),
+      ...buildZebraQuads(
+        route.signs
+          .filter((sign) => sign.type === 'pedestrian-crossing')
+          .map((sign) => ({ position: toLocalMeters(origin, sign.position), headingDeg: sign.headingDeg })),
+        route.waypoints,
+        routePoints,
+      ),
+      ...buildStopLineQuads(route.maneuvers, route.waypoints, routePoints),
+    ],
+    route.id,
+    scene,
+  );
   const buildingShapes = buildings.map((building) => ({
     id: building.id,
     footprint: building.footprint.map((corner) => toLocalMeters(origin, corner)),
@@ -241,7 +264,7 @@ function createScene(route: RouteDefinition, mode: DriveMode): Scene {
     const spawnSegmentIndex = queryRoadBounds(routePoints, roadWidthMAt, centerPose).segmentIndex;
     const laneCount = ownDirectionLaneCount(route.waypoints, spawnSegmentIndex);
     const laneIndex = index % laneCount;
-    const pose = offsetPoseToLane(centerPose, laneOffsetM(laneIndex, laneCount));
+    const pose = offsetPoseToLane(centerPose, laneOffsetM(laneIndex, laneCount, isTwoWaySegment(route.waypoints, spawnSegmentIndex)));
     mesh.position.x = pose.x;
     mesh.position.z = pose.z;
     mesh.rotation.y = pose.headingRad;
@@ -261,7 +284,12 @@ function createScene(route: RouteDefinition, mode: DriveMode): Scene {
     (offsetM) => {
       const { mesh, bodyMaterial } = buildVehicleMesh(scene);
       bodyMaterial.diffuseColor = AI_VEHICLE_COLOR;
-      const pose = offsetPoseToLane(poseAtArcLength(oncomingRoute.points, oncomingArcLengthTable, offsetM), LANE_OFFSET_M);
+      const centerPose = poseAtArcLength(oncomingRoute.points, oncomingArcLengthTable, offsetM);
+      // El carril contrario es la franja izquierda del layout centrado (ver
+      // core/lanes.ts): su offset desde la polilínea depende de cuántos
+      // carriles propios tenga el tramo, así que se consulta el segmento.
+      const spawnSegmentIndex = queryRoadBounds(routePoints, roadWidthMAt, centerPose).segmentIndex;
+      const pose = offsetPoseToLane(centerPose, oncomingLaneOffsetM(ownDirectionLaneCount(route.waypoints, spawnSegmentIndex)));
       mesh.position.x = pose.x;
       mesh.position.z = pose.z;
       mesh.rotation.y = pose.headingRad;
@@ -481,7 +509,11 @@ function createScene(route: RouteDefinition, mode: DriveMode): Scene {
     // evaluación de la maniobra lane-change como para saber si el jugador
     // bloquea a un vehículo de IA que le siga por detrás en ese carril.
     const playerLaneCount = ownDirectionLaneCount(route.waypoints, bounds.segmentIndex);
-    const playerLaneIndex = laneIndexFromLateralOffsetM(bounds.lateralOffsetM, playerLaneCount);
+    const playerLaneIndex = laneIndexFromLateralOffsetM(
+      bounds.lateralOffsetM,
+      playerLaneCount,
+      isTwoWaySegment(route.waypoints, bounds.segmentIndex),
+    );
 
     // Toda la capa de evaluación de examen (progreso de maniobras + los 6
     // evaluadores) se salta entera en circulación libre — el resto del bucle
@@ -681,6 +713,7 @@ function createScene(route: RouteDefinition, mode: DriveMode): Scene {
       const speedLimitMs = currentSpeedLimitKmh(route.waypoints, aiBounds.segmentIndex) / 3.6;
       const stopLineArcM = nextStopArcLengthM(vehicle.state.distanceAlongRouteM, stopPointArcLengths, leadArcM);
       const laneCount = ownDirectionLaneCount(route.waypoints, aiBounds.segmentIndex);
+      const segmentTwoWay = isTwoWaySegment(route.waypoints, aiBounds.segmentIndex);
 
       // Colisión física con otro vehículo de IA (propio sentido u oncoming) o
       // un peatón: la distancia de seguimiento (leadArcM) ya evita casi
@@ -704,7 +737,7 @@ function createScene(route: RouteDefinition, mode: DriveMode): Scene {
           : steppedState;
       const candidatePose = offsetPoseToLane(
         poseAtArcLength(routePoints, arcLengthTable, candidateState.distanceAlongRouteM),
-        laneOffsetM(vehicle.laneIndex, laneCount),
+        laneOffsetM(vehicle.laneIndex, laneCount, segmentTwoWay),
       );
       const candidateCorners = vehicleCorners(candidatePose.x, candidatePose.z, candidatePose.headingRad, VEHICLE_LENGTH_M, VEHICLE_WIDTH_M);
       const othersCorners = otherVehicleCorners.filter((_, otherIndex) => otherIndex !== index);
@@ -719,7 +752,7 @@ function createScene(route: RouteDefinition, mode: DriveMode): Scene {
         collidesWithVehicle || collidesWithPedestrian
           ? offsetPoseToLane(
               poseAtArcLength(routePoints, arcLengthTable, vehicle.state.distanceAlongRouteM),
-              laneOffsetM(vehicle.laneIndex, laneCount),
+              laneOffsetM(vehicle.laneIndex, laneCount, segmentTwoWay),
             )
           : candidatePose;
       vehicle.mesh.position.x = pose.x;
@@ -764,6 +797,12 @@ function createScene(route: RouteDefinition, mode: DriveMode): Scene {
       });
       const speedLimitMs = currentSpeedLimitKmh(route.waypoints, oncomingBounds.segmentIndex) / 3.6;
       const stopLineArcM = nextStopArcLengthM(vehicle.state.distanceAlongRouteM, oncomingStopPointArcLengths, leadArcM);
+      // Offset del carril contrario en el layout centrado (ver core/lanes.ts):
+      // depende del número de carriles propios del tramo, así que puede saltar
+      // 3m lateralmente al cruzar un waypoint donde ese número cambia — misma
+      // clase de simplificación que el clampeo de carril de la IA propia (no
+      // hay modelo de transición suave).
+      const laneOffset = oncomingLaneOffsetM(ownDirectionLaneCount(route.waypoints, oncomingBounds.segmentIndex));
 
       // Misma red de seguridad de colisión física que en aiVehicles.forEach
       // arriba (otherVehicleCorners cubre ambos sentidos, el índice de este
@@ -779,7 +818,7 @@ function createScene(route: RouteDefinition, mode: DriveMode): Scene {
           : steppedState;
       const candidatePose = offsetPoseToLane(
         poseAtArcLength(oncomingRoute.points, oncomingArcLengthTable, candidateState.distanceAlongRouteM),
-        LANE_OFFSET_M,
+        laneOffset,
       );
       const candidateCorners = vehicleCorners(candidatePose.x, candidatePose.z, candidatePose.headingRad, VEHICLE_LENGTH_M, VEHICLE_WIDTH_M);
       const selfIndex = aiVehicles.length + index;
@@ -795,7 +834,7 @@ function createScene(route: RouteDefinition, mode: DriveMode): Scene {
         collidesWithVehicle || collidesWithPedestrian
           ? offsetPoseToLane(
               poseAtArcLength(oncomingRoute.points, oncomingArcLengthTable, vehicle.state.distanceAlongRouteM),
-              LANE_OFFSET_M,
+              laneOffset,
             )
           : candidatePose;
       vehicle.mesh.position.x = pose.x;
